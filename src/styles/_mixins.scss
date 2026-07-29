@@ -1,0 +1,140 @@
+@use 'tokens' as *;
+
+// ---------------------------------------------------------------------------
+// Media queries — approche mobile-first : on écrit le mobile par défaut,
+// puis on élargit avec `@include up($bp-md)`.
+// ---------------------------------------------------------------------------
+@mixin up($bp) {
+  @media (min-width: $bp) {
+    @content;
+  }
+}
+
+@mixin down($bp) {
+  @media (max-width: ($bp - 1px)) {
+    @content;
+  }
+}
+
+@mixin touch-only {
+  @media (hover: none) and (pointer: coarse) {
+    @content;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Surfaces
+// ---------------------------------------------------------------------------
+@mixin card($padding: 16px) {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: $radius-md;
+  padding: $padding;
+}
+
+@mixin elevated {
+  box-shadow: var(--shadow-md);
+}
+
+// ---------------------------------------------------------------------------
+// Typographie
+// ---------------------------------------------------------------------------
+@mixin title($size: 1.05rem) {
+  font-size: $size;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+
+@mixin muted {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+// Tronque le texte sur N lignes
+@mixin clamp-lines($lines: 2) {
+  display: -webkit-box;
+  -webkit-line-clamp: $lines;
+  line-clamp: $lines;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+// ---------------------------------------------------------------------------
+// Interactions
+// ---------------------------------------------------------------------------
+@mixin focus-ring {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@mixin pressable {
+  transition:
+    transform 0.12s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:active {
+    transform: scale(0.985);
+  }
+
+  &:focus-visible {
+    @include focus-ring;
+  }
+}
+
+// Zone tactile minimale recommandée (44px) sans grossir visuellement l'élément
+@mixin tap-target($min: 44px) {
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 50% 50% 50% 50%;
+    width: max(100%, $min);
+    height: max(100%, $min);
+    transform: translate(-50%, -50%);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Défilement horizontal (chips de filtres, carrousels de cartes)
+// ---------------------------------------------------------------------------
+@mixin h-scroll($gap: 8px) {
+  display: flex;
+  gap: $gap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  > * {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+}
+
+// Grille auto-responsive
+@mixin auto-grid($min: 240px, $gap: 12px) {
+  display: grid;
+  gap: $gap;
+  grid-template-columns: repeat(auto-fill, minmax($min, 1fr));
+}
+
+@mixin visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

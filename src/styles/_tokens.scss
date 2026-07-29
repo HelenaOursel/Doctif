@@ -1,0 +1,29 @@
+// Design tokens — Assistant d'administration personnelle
+// Toutes les valeurs sont exposées en variables CSS pour permettre le thème sombre.
+
+$bp-sm: 480px;
+$bp-md: 768px;
+$bp-lg: 1024px;
+$bp-xl: 1280px;
+
+$radius-xs: 6px;
+$radius-sm: 10px;
+$radius-md: 14px;
+$radius-lg: 20px;
+$radius-xl: 28px;
+$radius-pill: 999px;
+
+$z-header: 100;
+$z-bottomnav: 110;
+$z-drawer: 200;
+$z-overlay: 300;
+$z-sheet: 310;
+$z-toast: 400;
+
+$font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+$font-mono: 'JetBrains Mono', 'Cascadia Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+
+// Hauteurs de chrome applicatif (utilisées pour les décalages de scroll)
+$header-h: 60px;
+$bottomnav-h: 64px;
+$sidebar-w: 268px;

@@ -1,0 +1,566 @@
+import { NgTemplateOutlet } from '@angular/common';
+import { Component, computed, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
+import { TranslatePipe } from '../../core/i18n/i18n.service';
+import { CATEGORIES, DEADLINE_KIND_LABEL, Deadline, DeadlineKind } from '../../core/models';
+import { DeadlineService } from '../../core/services/deadline.service';
+import { UiService } from '../../core/services/ui.service';
+import { Store } from '../../core/store';
+import { daysUntil, todayIso } from '../../core/utils';
+import {
+  EmptyStateComponent,
+  PageHeaderComponent,
+  SheetComponent,
+} from '../../shared/components';
+import { DeadlineIconClassPipe, IconComponent } from '../../shared/icon.component';
+import { CategoryLabelPipe, FrDatePipe, RelativeDaysPipe } from '../../shared/pipes';
+
+const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+@Component({
+  selector: 'app-calendar',
+  standalone: true,
+  imports: [
+    FormsModule,
+    NgTemplateOutlet,
+    TranslatePipe,
+    PageHeaderComponent,
+    EmptyStateComponent,
+    SheetComponent,
+    IconComponent,
+    DeadlineIconClassPipe,
+    CategoryLabelPipe,
+    FrDatePipe,
+    RelativeDaysPipe,
+  ],
+  template: `
+    <app-page-header [title]="'calendar.title' | t" subtitle="Détectées depuis vos contrats et vos documents.">
+      <button type="button" class="btn btn--sm btn--primary" (click)="openCreate()">
+        <app-icon name="add" /> Ajouter
+      </button>
+    </app-page-header>
+
+    <!-- Suggestions issues des contrats -->
+    @if (suggestions().length) {
+      <div class="callout callout--info" style="margin-top: 16px">
+        <app-icon class="callout__icon" name="sparkles" />
+        <div class="grow">
+          <strong>{{ suggestions().length }} échéance(s) déductible(s) de vos contrats</strong>
+          <p>Dates anniversaires, fins d'engagement et derniers jours pour résilier ne figurent pas encore au calendrier.</p>
+          <div class="row wrap" style="margin-top: 10px">
+            <button type="button" class="btn btn--sm btn--primary" (click)="acceptAll()">
+              <app-icon name="check" /> Tout ajouter
+            </button>
+            <button type="button" class="btn btn--sm btn--ghost" (click)="suggestionsOpen.set(true)">
+              <app-icon name="eye" /> Examiner
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Bascule vue -->
+    <div class="row" style="margin-top: 16px">
+      <div class="segmented" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="view() === 'liste'"
+          [class.segmented__btn--active]="view() === 'liste'"
+          class="segmented__btn"
+          (click)="view.set('liste')"
+        >
+          <app-icon name="clipboard" /> Liste
+        </button>
+        <button
+          type="button"
+          role="tab"
+          [attr.aria-selected]="view() === 'mois'"
+          [class.segmented__btn--active]="view() === 'mois'"
+          class="segmented__btn"
+          (click)="view.set('mois')"
+        >
+          <app-icon name="calendar" /> Mois
+        </button>
+      </div>
+    </div>
+
+    <!-- Filtres par catégorie -->
+    <div class="scroll-x" style="margin: 12px 0">
+      <button type="button" class="chip" [class.chip--active]="!categoryFilter()" (click)="categoryFilter.set(null)">
+        {{ 'common.all' | t }}
+      </button>
+      @for (c of categories; track c) {
+        <button
+          type="button"
+          class="chip"
+          [class.chip--active]="categoryFilter() === c"
+          (click)="categoryFilter.set(categoryFilter() === c ? null : c)"
+        >
+          {{ c | catLabel }}
+        </button>
+      }
+    </div>
+
+    @if (view() === 'mois') {
+      <!-- Vue mensuelle -->
+      <div class="cal card">
+        <div class="cal__head">
+          <button type="button" class="btn btn--quiet btn--icon" (click)="shiftMonth(-1)" aria-label="Mois précédent">
+            <app-icon cls="fa-solid fa-chevron-left" />
+          </button>
+          <strong>{{ month().label }}</strong>
+          <button type="button" class="btn btn--quiet btn--icon" (click)="shiftMonth(1)" aria-label="Mois suivant">
+            <app-icon name="chevronRight" />
+          </button>
+        </div>
+
+        <div class="cal__grid cal__grid--weekdays" aria-hidden="true">
+          @for (d of weekdays; track $index) {
+            <span>{{ d }}</span>
+          }
+        </div>
+
+        <div class="cal__grid">
+          @for (cell of month().cells; track cell.date) {
+            <button
+              type="button"
+              class="cal__cell"
+              [class.cal__cell--out]="!cell.inMonth"
+              [class.cal__cell--today]="cell.isToday"
+              [class.cal__cell--selected]="selectedDate() === cell.date"
+              (click)="selectedDate.set(cell.date)"
+              [attr.aria-label]="cell.date + (cell.deadlines.length ? ', ' + cell.deadlines.length + ' échéance(s)' : '')"
+            >
+              <span class="cal__num">{{ cell.dayOfMonth }}</span>
+              @if (cell.deadlines.length) {
+                <span class="cal__dots">
+                  @for (d of cell.deadlines.slice(0, 3); track d.id) {
+                    <span class="cal__dot" [style.background]="colorFor(d)"></span>
+                  }
+                </span>
+              }
+            </button>
+          }
+        </div>
+      </div>
+
+      @if (selectedDayDeadlines().length) {
+        <div class="section-head"><h2>{{ selectedDate() | frDate: 'long' }}</h2></div>
+        <div class="list">
+          @for (d of selectedDayDeadlines(); track d.id) {
+            <div class="row-card">
+              <span class="row-card__icon"><app-icon [cls]="d.kind | deadlineIconClass" /></span>
+              <span class="row-card__body">
+                <span class="row-card__title">{{ d.title }}</span>
+                <span class="row-card__meta">{{ kindLabel(d.kind) }}</span>
+              </span>
+              <button type="button" class="btn btn--sm btn--quiet" (click)="toggleDone(d.id)">
+                <app-icon [name]="d.done ? 'checkCircle' : 'emptyCircle'" />
+              </button>
+            </div>
+          }
+        </div>
+      } @else if (selectedDate()) {
+        <p class="muted" style="margin-top: 12px">Aucune échéance le {{ selectedDate() | frDate: 'long' }}.</p>
+      }
+    } @else {
+      <!-- Vue liste groupée -->
+      @if (overdue().length) {
+        <div class="section-head"><h2 class="text-danger">En retard</h2></div>
+        <div class="list">
+          @for (d of overdue(); track d.id) {
+            <ng-container *ngTemplateOutlet="row; context: { $implicit: d }" />
+          }
+        </div>
+      }
+
+      @for (group of groups(); track group.label) {
+        @if (group.items.length) {
+          <div class="section-head">
+            <h2>{{ group.label }}</h2>
+            <span class="muted">{{ group.items.length }}</span>
+          </div>
+          <div class="list">
+            @for (d of group.items; track d.id) {
+              <ng-container *ngTemplateOutlet="row; context: { $implicit: d }" />
+            }
+          </div>
+        }
+      }
+
+      @if (!overdue().length && !hasAny()) {
+        <app-empty icon="calendarEmpty" title="Aucune échéance à venir" hint="Ajoutez-en une, ou importez un document contenant une date limite." />
+      }
+
+      @if (doneList().length) {
+        <div class="section-head"><h2>Traitées</h2></div>
+        <div class="list">
+          @for (d of doneList(); track d.id) {
+            <div class="row-card row-card--done">
+              <span class="row-card__icon"><app-icon name="success" /></span>
+              <span class="row-card__body">
+                <span class="row-card__title">{{ d.title }}</span>
+                <span class="row-card__meta">{{ d.date | frDate }}</span>
+              </span>
+              <button type="button" class="btn btn--sm btn--quiet" (click)="toggleDone(d.id)" aria-label="Rouvrir">
+                <app-icon name="refresh" />
+              </button>
+            </div>
+          }
+        </div>
+      }
+    }
+
+    <!-- Gabarit de ligne réutilisé par les groupes -->
+    <ng-template #row let-d>
+      <div class="row-card">
+        <span class="row-card__icon" [style.background]="colorFor(d) + '1f'" [style.color]="colorFor(d)">
+          <app-icon [cls]="d.kind | deadlineIconClass" />
+        </span>
+        <span class="row-card__body">
+          <span class="row-card__title">{{ d.title }}</span>
+          <span class="row-card__meta">
+            <span>{{ d.date | frDate }}</span>
+          </span>
+        </span>
+        <span class="row-card__side">
+          <span
+            class="badge"
+            [class.badge--danger]="days(d.date) <= 7"
+            [class.badge--warning]="days(d.date) > 7 && days(d.date) <= 30"
+          >
+            {{ days(d.date) | relDays }}
+          </span>
+          <button type="button" class="btn btn--sm btn--quiet" (click)="toggleDone(d.id)" aria-label="Marquer comme fait">
+            <app-icon name="emptyCircle" />
+          </button>
+        </span>
+      </div>
+    </ng-template>
+
+    <!-- Suggestions détaillées -->
+    <app-sheet [open]="suggestionsOpen()" title="Échéances détectées" (close)="suggestionsOpen.set(false)">
+      <div class="list">
+        @for (s of suggestions(); track s.title + s.date) {
+          <div class="row-card">
+            <span class="row-card__icon"><app-icon [cls]="s.kind | deadlineIconClass" /></span>
+            <span class="row-card__body">
+              <span class="row-card__title">{{ s.title }}</span>
+              <span class="row-card__meta">{{ s.date | frDate: 'long' }}</span>
+              @if (s.note) {
+                <span class="row-card__note">{{ s.note }}</span>
+              }
+            </span>
+            <button type="button" class="btn btn--sm btn--primary" (click)="accept(s)">
+              <app-icon name="add" />
+            </button>
+          </div>
+        }
+      </div>
+    </app-sheet>
+
+    <!-- Création manuelle -->
+    <app-sheet [open]="createOpen()" title="Nouvelle échéance" (close)="createOpen.set(false)">
+      <div class="field">
+        <label for="n-title">Intitulé</label>
+        <input id="n-title" class="input" [(ngModel)]="draftTitle" placeholder="Ex. Renouveler le passeport" />
+      </div>
+      <div class="field">
+        <label for="n-date">Date</label>
+        <input id="n-date" class="input" type="date" [(ngModel)]="draftDate" />
+      </div>
+      <div class="field">
+        <label for="n-kind">Type</label>
+        <select id="n-kind" class="select" [(ngModel)]="draftKind">
+          @for (k of kinds; track k) {
+            <option [value]="k">{{ kindLabel(k) }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label for="n-cat">Catégorie</label>
+        <select id="n-cat" class="select" [(ngModel)]="draftCategory">
+          @for (c of categories; track c) {
+            <option [value]="c">{{ c | catLabel }}</option>
+          }
+        </select>
+      </div>
+      <div class="field">
+        <label for="n-note">Note</label>
+        <textarea id="n-note" class="textarea" [(ngModel)]="draftNote" rows="3"></textarea>
+      </div>
+
+      <div class="row">
+        <button type="button" class="btn btn--ghost grow" (click)="createOpen.set(false)">Annuler</button>
+        <button type="button" class="btn btn--primary grow" [disabled]="!draftTitle || !draftDate" (click)="create()">
+          Créer
+        </button>
+      </div>
+    </app-sheet>
+  `,
+  styles: [
+    `
+      .segmented {
+        display: inline-flex;
+        padding: 3px;
+        border-radius: 12px;
+        background: var(--surface-2);
+        gap: 3px;
+      }
+      .segmented__btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 14px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--text-muted);
+        font-size: 0.84rem;
+        font-weight: 620;
+        cursor: pointer;
+      }
+      .segmented__btn--active {
+        background: var(--surface);
+        color: var(--text);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .cal__head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+        font-size: 0.98rem;
+      }
+      .cal__grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: 3px;
+      }
+      .cal__grid--weekdays {
+        margin-bottom: 4px;
+
+        span {
+          text-align: center;
+          font-size: 0.7rem;
+          font-weight: 700;
+          color: var(--text-muted);
+          padding: 4px 0;
+        }
+      }
+      .cal__cell {
+        aspect-ratio: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        border: 1px solid transparent;
+        border-radius: 9px;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        font-variant-numeric: tabular-nums;
+
+        &:hover {
+          background: var(--surface-2);
+        }
+      }
+      .cal__cell--out {
+        color: var(--text-muted);
+        opacity: 0.45;
+      }
+      .cal__cell--today {
+        border-color: var(--primary);
+        font-weight: 700;
+      }
+      .cal__cell--selected {
+        background: var(--primary-soft);
+        border-color: var(--primary);
+      }
+      .cal__num {
+        font-size: 0.84rem;
+      }
+      .cal__dots {
+        display: flex;
+        gap: 2px;
+      }
+      .cal__dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+      }
+
+      .row-card__note {
+        display: block;
+        margin-top: 5px;
+        font-size: 0.79rem;
+        color: var(--text-muted);
+        line-height: 1.45;
+      }
+      .row-card--done {
+        opacity: 0.62;
+      }
+      .row-card--done .row-card__title {
+        text-decoration: line-through;
+      }
+      .row-card__side {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .text-danger {
+        color: var(--danger);
+      }
+    `,
+  ],
+})
+export class CalendarComponent {
+  private readonly service = inject(DeadlineService);
+  private readonly store = inject(Store);
+  private readonly ui = inject(UiService);
+
+  readonly categories = CATEGORIES;
+  readonly kinds = Object.keys(DEADLINE_KIND_LABEL) as DeadlineKind[];
+  readonly weekdays = WEEKDAYS;
+
+  readonly view = signal<'liste' | 'mois'>('liste');
+  readonly categoryFilter = signal<string | null>(null);
+  readonly selectedDate = signal<string>(todayIso());
+  readonly suggestionsOpen = signal(false);
+  readonly createOpen = signal(false);
+
+  private readonly cursor = signal(new Date());
+
+  readonly suggestions = this.service.suggestions;
+
+  readonly month = computed(() => {
+    const c = this.cursor();
+    return this.service.buildMonth(c.getFullYear(), c.getMonth());
+  });
+
+  private readonly filtered = computed(() => {
+    const cat = this.categoryFilter();
+    const all = this.store.deadlines();
+    return cat ? all.filter((d) => d.category === cat) : all;
+  });
+
+  readonly overdue = computed(() =>
+    this.filtered()
+      .filter((d) => !d.done && daysUntil(d.date) < 0)
+      .sort((a, b) => a.date.localeCompare(b.date)),
+  );
+
+  readonly doneList = computed(() =>
+    this.filtered()
+      .filter((d) => d.done)
+      .sort((a, b) => b.date.localeCompare(a.date)),
+  );
+
+  /** Regroupement par horizon temporel : c'est ainsi qu'on lit un calendrier. */
+  readonly groups = computed(() => {
+    const upcoming = this.filtered()
+      .filter((d) => !d.done && daysUntil(d.date) >= 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const bucket = (min: number, max: number) =>
+      upcoming.filter((d) => {
+        const n = daysUntil(d.date);
+        return n >= min && n <= max;
+      });
+
+    return [
+      { label: 'Cette semaine', items: bucket(0, 7) },
+      { label: 'Ce mois-ci', items: bucket(8, 30) },
+      { label: 'Dans 3 mois', items: bucket(31, 90) },
+      { label: 'Plus tard', items: upcoming.filter((d) => daysUntil(d.date) > 90) },
+    ];
+  });
+
+  readonly hasAny = computed(() => this.groups().some((g) => g.items.length > 0));
+
+  readonly selectedDayDeadlines = computed(() =>
+    this.filtered().filter((d) => d.date === this.selectedDate()),
+  );
+
+  /* Brouillon de création */
+  draftTitle = '';
+  draftDate = todayIso();
+  draftKind: DeadlineKind = 'autre';
+  draftCategory = 'autre';
+  draftNote = '';
+
+  days(iso: string): number {
+    return daysUntil(iso);
+  }
+
+  kindLabel(kind: DeadlineKind): string {
+    return DEADLINE_KIND_LABEL[kind] ?? 'Échéance';
+  }
+
+  colorFor(d: Deadline): string {
+    const n = daysUntil(d.date);
+    if (n < 0) return 'var(--danger)';
+    if (n <= 7) return 'var(--danger)';
+    if (n <= 30) return 'var(--warning)';
+    return 'var(--info)';
+  }
+
+  shiftMonth(delta: number): void {
+    this.cursor.update((d) => new Date(d.getFullYear(), d.getMonth() + delta, 1));
+  }
+
+  toggleDone(id: string): void {
+    const before = this.store.deadlines().find((d) => d.id === id);
+    this.service.toggleDone(id);
+    if (this.store.readOnly()) {
+      this.ui.readOnlyBlocked();
+      return;
+    }
+    if (before && !before.done) this.ui.success('Échéance traitée', before.title);
+  }
+
+  accept(deadline: Deadline): void {
+    if (!this.service.acceptSuggestion(deadline)) {
+      this.ui.readOnlyBlocked();
+      return;
+    }
+    this.ui.success('Échéance ajoutée', deadline.title);
+  }
+
+  acceptAll(): void {
+    const n = this.service.acceptAllSuggestions();
+    if (!n) {
+      this.ui.readOnlyBlocked();
+      return;
+    }
+    this.ui.success(`${n} échéance(s) ajoutée(s)`, 'Votre calendrier est à jour.');
+  }
+
+  openCreate(): void {
+    this.draftTitle = '';
+    this.draftDate = todayIso();
+    this.draftKind = 'autre';
+    this.draftCategory = 'autre';
+    this.draftNote = '';
+    this.createOpen.set(true);
+  }
+
+  create(): void {
+    const ok = this.service.create({
+      title: this.draftTitle.trim(),
+      date: this.draftDate,
+      kind: this.draftKind,
+      category: this.draftCategory as never,
+      note: this.draftNote.trim() || undefined,
+    });
+    if (!ok) {
+      this.ui.readOnlyBlocked();
+      return;
+    }
+    this.createOpen.set(false);
+    this.ui.success('Échéance créée');
+  }
+}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Assistant d\'administration</string>
+    <string name="title_activity_main">Assistant d\'administration</string>
+    <string name="package_name">com.example.adminassistant</string>
+    <string name="custom_url_scheme">com.example.adminassistant</string>
+</resources>

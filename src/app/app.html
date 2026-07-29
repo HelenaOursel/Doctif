@@ -1,0 +1,150 @@
+<a class="skip-link" href="#contenu">{{ 'app.skipLink' | t }}</a>
+
+<!-- ================= En-tête (mobile & tablette) ================= -->
+<header class="app-header">
+  <button
+    type="button"
+    class="app-header__btn"
+    (click)="ui.toggleDrawer()"
+    [attr.aria-expanded]="ui.drawerOpen()"
+    aria-controls="app-drawer"
+    [attr.aria-label]="'app.menu.open' | t"
+  >
+    <app-icon name="menu" />
+  </button>
+
+  <div class="app-header__title">
+    <app-icon name="brand" class="app-header__mark" />
+    <span class="truncate">{{ currentTitle() }}</span>
+  </div>
+
+  <button
+    type="button"
+    class="app-header__btn"
+    (click)="ui.toggleTheme()"
+    [attr.aria-label]="(ui.theme() === 'dark' ? 'app.theme.toLight' : 'app.theme.toDark') | t"
+  >
+    <app-icon [name]="ui.theme() === 'dark' ? 'themeLight' : 'themeDark'" />
+  </button>
+
+  <a class="app-header__btn app-header__bell" routerLink="/alertes" [attr.aria-label]="'app.alerts.aria' | t">
+    <app-icon name="bell" />
+    @if (unreadAlerts() > 0) {
+      <span class="app-header__dot" aria-hidden="true">{{ unreadAlerts() > 9 ? '9+' : unreadAlerts() }}</span>
+      <span class="sr-only">{{ 'app.alerts.unread' | t: { count: unreadAlerts() } }}</span>
+    }
+  </a>
+</header>
+
+<!-- ================= Tiroir de navigation (mobile) ================= -->
+@if (ui.drawerOpen()) {
+  <div class="drawer-overlay" (click)="ui.closeDrawer()"></div>
+}
+<nav id="app-drawer" class="app-drawer" [class.app-drawer--open]="ui.drawerOpen()" [attr.aria-label]="'app.name' | t">
+  <div class="app-drawer__head">
+    <div class="app-drawer__brand">
+      <app-icon name="brand" />
+      <div>
+        <strong>{{ 'app.name' | t }}</strong>
+        <small>{{ profile().firstName }} {{ profile().lastName }}</small>
+      </div>
+    </div>
+    <button
+      type="button"
+      class="btn btn--quiet btn--icon"
+      (click)="ui.closeDrawer()"
+      [attr.aria-label]="'app.menu.close' | t"
+    >
+      <app-icon name="close" />
+    </button>
+  </div>
+
+  <div class="app-drawer__scroll">
+    @for (group of navGroups; track group.titleKey) {
+      <div class="navgroup">
+        <p class="navgroup__title">{{ group.titleKey | t }}</p>
+        @for (item of group.items; track item.route) {
+          <a
+            class="navlink"
+            [routerLink]="item.route"
+            routerLinkActive="navlink--active"
+            (click)="ui.closeDrawer()"
+            [title]="item.descKey | t"
+          >
+            <app-icon class="navlink__icon" [name]="item.icon" fw />
+            <span class="navlink__label">{{ item.labelKey | t }}</span>
+            @if (item.route === '/alertes' && unreadAlerts() > 0) {
+              <span class="navlink__badge">{{ unreadAlerts() }}</span>
+            }
+          </a>
+        }
+      </div>
+    }
+  </div>
+</nav>
+
+<!-- ================= Rail latéral (desktop) ================= -->
+<aside class="app-sidebar" [attr.aria-label]="'app.name' | t">
+  <a class="app-sidebar__brand" routerLink="/tableau-de-bord">
+    <app-icon name="brand" />
+    <div>
+      <strong>{{ 'app.name' | t }}</strong>
+      <small>{{ profile().firstName }} {{ profile().lastName }}</small>
+    </div>
+  </a>
+
+  <div class="app-sidebar__scroll">
+    @for (group of navGroups; track group.titleKey) {
+      <div class="navgroup">
+        <p class="navgroup__title">{{ group.titleKey | t }}</p>
+        @for (item of group.items; track item.route) {
+          <a class="navlink" [routerLink]="item.route" routerLinkActive="navlink--active" [title]="item.descKey | t">
+            <app-icon class="navlink__icon" [name]="item.icon" fw />
+            <span class="navlink__label">{{ item.labelKey | t }}</span>
+            @if (item.route === '/alertes' && unreadAlerts() > 0) {
+              <span class="navlink__badge">{{ unreadAlerts() }}</span>
+            }
+          </a>
+        }
+      </div>
+    }
+  </div>
+
+  <div class="app-sidebar__foot">
+    <button type="button" class="btn btn--ghost btn--block btn--sm" (click)="ui.toggleTheme()">
+      <app-icon [name]="ui.theme() === 'dark' ? 'themeLight' : 'themeDark'" />
+      {{ (ui.theme() === 'dark' ? 'app.theme.light' : 'app.theme.dark') | t }}
+    </button>
+  </div>
+</aside>
+
+<!-- ================= Contenu ================= -->
+<main id="contenu" class="app-main">
+  @if (readOnly()) {
+    <div class="readonly-banner" role="status">
+      <app-icon name="lock" />
+      <div>
+        <strong>{{ 'app.readOnly.title' | t }}</strong>
+        <p>{{ 'app.readOnly.body' | t }}</p>
+      </div>
+      <a class="btn btn--sm btn--ghost" routerLink="/archives">{{ 'app.readOnly.manage' | t }}</a>
+    </div>
+  }
+
+  <router-outlet />
+</main>
+
+<!-- ================= Barre inférieure (mobile) ================= -->
+<nav class="app-bottomnav" [attr.aria-label]="'app.name' | t">
+  @for (item of bottomNav; track item.route; let i = $index) {
+    <a
+      class="bottomnav__item"
+      [class.bottomnav__item--fab]="i === 2"
+      [routerLink]="item.route"
+      routerLinkActive="bottomnav__item--active"
+    >
+      <app-icon class="bottomnav__icon" [name]="item.icon" />
+      <span class="bottomnav__label">{{ (item.shortKey ?? item.labelKey) | t }}</span>
+    </a>
+  }
+</nav>
