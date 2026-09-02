@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { map } from 'rxjs';
 import { TranslatePipe } from '../../core/i18n/i18n.service';
-import { CATEGORIES, DEADLINE_KIND_LABEL, Deadline, DeadlineKind } from '../../core/models';
+import { CATEGORIES, Category, DEADLINE_KIND_LABEL, Deadline, DeadlineKind } from '../../core/models';
 import { DeadlineService } from '../../core/services/deadline.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
@@ -50,6 +50,12 @@ const normalizeView = (raw: string | null): CalendarView =>
   template: `
     <app-page-header [title]="'calendar.title' | t">
       @if (deadlineView()) {
+        <button type="button" class="btn btn--sm btn--ghost" (click)="filtersOpen.set(true)">
+          <app-icon name="filter" /> Filtres
+          @if (hasActiveFilters()) {
+            <span class="dot-marker" aria-hidden="true"></span>
+          }
+        </button>
         <button type="button" class="btn btn--sm btn--primary" (click)="openCreate()">
           <app-icon name="add" /> Ajouter
         </button>
@@ -68,7 +74,8 @@ const normalizeView = (raw: string | null): CalendarView =>
           [class.segmented__btn--active]="view() === tab.value"
           (click)="setView(tab.value)"
         >
-          <app-icon [name]="tab.icon" /> {{ tab.label }}
+          <app-icon class="segmented__icon" [name]="tab.icon" />
+          <span class="segmented__label">{{ tab.label }}</span>
           @if (tab.value === 'alertes' && unreadCount() > 0) {
             <span class="segmented__badge">{{ unreadCount() }}</span>
           }
@@ -95,38 +102,6 @@ const normalizeView = (raw: string | null): CalendarView =>
         </div>
       }
 
-      <!-- Filtre par état de traitement -->
-      <div class="scroll-x" style="margin: 12px 0 8px">
-        @for (f of statusFilters; track f.value) {
-          <button
-            type="button"
-            class="chip"
-            [class.chip--active]="statusFilter() === f.value"
-            [attr.aria-pressed]="statusFilter() === f.value"
-            (click)="statusFilter.set(f.value)"
-          >
-            {{ f.label }}
-            <span class="chip__count">{{ countForStatus(f.value) }}</span>
-          </button>
-        }
-      </div>
-
-      <!-- Filtres par catégorie -->
-      <div class="scroll-x" style="margin: 0 0 12px">
-        <button type="button" class="chip" [class.chip--active]="!categoryFilter()" (click)="categoryFilter.set(null)">
-          {{ 'common.all' | t }}
-        </button>
-        @for (c of categories; track c) {
-          <button
-            type="button"
-            class="chip"
-            [class.chip--active]="categoryFilter() === c"
-            (click)="categoryFilter.set(categoryFilter() === c ? null : c)"
-          >
-            {{ c | catLabel }}
-          </button>
-        }
-      </div>
     }
 
     @if (view() === 'alertes') {
@@ -299,6 +274,47 @@ const normalizeView = (raw: string | null): CalendarView =>
       </div>
     </app-sheet>
 
+    <!-- Filtres : statut et catégorie au même endroit, sous la même forme. -->
+    <app-sheet [open]="filtersOpen()" title="Filtres" (close)="filtersOpen.set(false)">
+      <p class="filter-group">Filtrer par statut</p>
+      <div class="chip-wrap">
+        @for (f of statusFilters; track f.value) {
+          <button
+            type="button"
+            class="chip"
+            [class.chip--active]="statusFilter() === f.value"
+            [attr.aria-pressed]="statusFilter() === f.value"
+            (click)="statusFilter.set(f.value)"
+          >
+            {{ f.label }}
+            <span class="chip__count">{{ countForStatus(f.value) }}</span>
+          </button>
+        }
+      </div>
+
+      <p class="filter-group">Filtrer par catégorie</p>
+      <div class="chip-wrap">
+        <button
+          type="button"
+          class="chip"
+          [class.chip--active]="!categoryFilter()"
+          (click)="categoryFilter.set(null)"
+        >
+          {{ 'common.all' | t }}
+        </button>
+        @for (c of categories; track c) {
+          <button
+            type="button"
+            class="chip"
+            [class.chip--active]="categoryFilter() === c"
+            (click)="categoryFilter.set(categoryFilter() === c ? null : c)"
+          >
+            {{ c | catLabel }}
+          </button>
+        }
+      </div>
+    </app-sheet>
+
     <!-- Création manuelle -->
     <app-sheet [open]="createOpen()" title="Nouvelle échéance" (close)="createOpen.set(false)">
       <div class="field">
@@ -355,19 +371,34 @@ const normalizeView = (raw: string | null): CalendarView =>
          deviner. */
       .segmented {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 4px;
         padding: 4px;
-        border-radius: 12px;
+        border-radius: 999px;
         background: var(--surface-2);
 
-        /* 600 px : en dessous, « Historique » et son icône ne tiennent pas
-           dans un quart de la largeur disponible. */
+        /* Sur grand écran la barre n'a aucune raison de traverser la page. */
         @include up(600px) {
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          /* Sur grand écran la barre n'a aucune raison de traverser la page. */
           max-width: 620px;
         }
+      }
+
+      /* Les quatre onglets tiennent sur une ligne à toute largeur. Sous 600 px
+         l'icône s'efface et le libellé rétrécit : c'est le mot qui doit
+         survivre, pas le pictogramme. L'ellipse n'est qu'un dernier recours,
+         pour qu'un libellé plus long qu'attendu se coupe proprement au lieu de
+         déborder du contrôle. */
+      .segmented__icon {
+        display: none;
+
+        @include up(600px) {
+          display: inline-block;
+        }
+      }
+      .segmented__label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .segmented__btn {
         display: inline-flex;
@@ -375,15 +406,21 @@ const normalizeView = (raw: string | null): CalendarView =>
         justify-content: center;
         gap: 7px;
         min-width: 0;
-        padding: 9px 10px;
-        border: 0;
-        border-radius: 9px;
+        padding: 8px 4px;
+        /* Bordure transparente et non absente : l'onglet actif en révèle une
+           sans que la taille des autres bouge d'un pixel. */
+        border: 1px solid transparent;
+        border-radius: 999px;
         background: transparent;
         color: var(--text-muted);
-        font-size: 0.86rem;
+        font-size: clamp(0.72rem, 2.9vw, 0.86rem);
         font-weight: 620;
         white-space: nowrap;
         cursor: pointer;
+
+        @include up(600px) {
+          padding: 8px 14px;
+        }
       }
       .segmented__badge {
         display: inline-grid;
@@ -398,10 +435,31 @@ const normalizeView = (raw: string | null): CalendarView =>
         font-weight: 700;
         font-variant-numeric: tabular-nums;
       }
+      /* Même aplat que la chip active : sur cet écran, « sélectionné » ne
+         doit avoir qu'une seule apparence. */
       .segmented__btn--active {
-        background: var(--surface);
-        color: var(--text);
-        box-shadow: var(--shadow-sm);
+        background: var(--primary-surface);
+        border-color: var(--primary-surface-border);
+        color: var(--on-primary-surface);
+      }
+
+      /* Intitulé de groupe dans le panneau de filtres. */
+      .filter-group {
+        margin: 0 0 10px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .chip-wrap + .filter-group {
+        margin-top: 22px;
+      }
+
+      .chip-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
       }
 
       .cal__head {
@@ -523,7 +581,13 @@ export class CalendarComponent {
 
   readonly deadlineView = computed(() => this.view() === 'liste' || this.view() === 'mois');
   readonly unreadCount = this.service.unreadCount;
-  readonly categoryFilter = signal<string | null>(null);
+  readonly categoryFilter = signal<Category | null>(null);
+  readonly filtersOpen = signal(false);
+
+  /** Pastille sur le bouton : quelque chose masque une partie de la liste. */
+  readonly hasActiveFilters = computed(
+    () => this.categoryFilter() !== null || this.statusFilter() !== 'a-traiter',
+  );
 
   /** Filtre par état de traitement. Par défaut, ce qui reste à faire. */
   readonly statusFilters = [

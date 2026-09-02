@@ -301,13 +301,6 @@ import { CategoryColorPipe, CategoryLabelPipe, EuroPipe, FrDatePipe, HighlightPi
         }
       }
 
-      .dot-marker {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: var(--primary);
-      }
-
       .row-card__thumb {
         flex: 0 0 auto;
         width: 40px;

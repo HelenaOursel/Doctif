@@ -5,8 +5,12 @@ import { average, groupBy, periodLabel, round2, sum } from '../utils';
 
 /** Écart relatif minimal (en %) à partir duquel une facture est signalée. */
 const DEVIATION_THRESHOLD = 25;
-/** Nombre minimal de relevés historiques nécessaires pour établir une référence. */
-const MIN_HISTORY = 4;
+/**
+ * Nombre minimal de relevés historiques nécessaires pour établir une référence.
+ * Exporté : le formulaire de saisie annonce le seuil à l'utilisateur, et deux
+ * valeurs qui divergent donneraient une promesse fausse.
+ */
+export const MIN_HISTORY = 4;
 
 export interface ProviderSeries {
   provider: string;
@@ -29,8 +33,24 @@ export interface ProviderSeries {
 export class AnomalyService {
   private readonly store = inject(Store);
 
+  /**
+   * Montant mensuel de chaque contrat, indexé par identifiant.
+   *
+   * C'est la référence de repli : un foyer qui n'a qu'un contrat attendrait
+   * cinq relevés avant le moindre signalement, alors qu'il détient déjà le
+   * montant qu'il est censé payer.
+   */
+  private readonly contractCosts = computed(() => {
+    const costs = new Map<string, number>();
+    for (const c of this.store.contracts()) {
+      if (c.monthlyCost > 0) costs.set(c.id, c.monthlyCost);
+    }
+    return costs;
+  });
+
   readonly series = computed<ProviderSeries[]>(() => {
     const groups = groupBy(this.store.bills(), (b) => `${b.provider}|${b.category}`);
+    const costs = this.contractCosts();
     const out: ProviderSeries[] = [];
 
     for (const [key, list] of groups) {
@@ -41,7 +61,7 @@ export class AnomalyService {
       const last = amounts[amounts.length - 1] ?? 0;
       const previous = amounts.slice(0, -1);
       const baseline = previous.length ? average(previous) : avg;
-      const anomalousPeriods = new Set(this.detect(sorted).map((a) => a.period));
+      const anomalousPeriods = new Set(this.detect(sorted, costs).map((a) => a.period));
 
       out.push({
         provider,
@@ -62,9 +82,10 @@ export class AnomalyService {
 
   readonly anomalies = computed<Anomaly[]>(() => {
     const groups = groupBy(this.store.bills(), (b) => `${b.provider}|${b.category}`);
+    const costs = this.contractCosts();
     const out: Anomaly[] = [];
     for (const [, list] of groups) {
-      out.push(...this.detect([...list].sort((a, b) => a.period.localeCompare(b.period))));
+      out.push(...this.detect([...list].sort((a, b) => a.period.localeCompare(b.period)), costs));
     }
     return out.sort((a, b) => b.period.localeCompare(a.period) || b.deviationPercent - a.deviationPercent);
   });
@@ -73,10 +94,38 @@ export class AnomalyService {
 
   /**
    * Analyse une série chronologique d'un même fournisseur.
-   * Seuls les points disposant d'un historique suffisant sont évalués.
+   *
+   * Les relevés dotés d'un historique suffisant sont jugés sur leur propre
+   * moyenne ; les premiers, qui n'en ont pas, le sont sur le montant du
+   * contrat quand ils y sont rattachés.
    */
-  private detect(sorted: Bill[]): Anomaly[] {
+  private detect(sorted: Bill[], contractCosts: Map<string, number>): Anomaly[] {
     const out: Anomaly[] = [];
+
+    // Les premiers relevés n'ont pas d'historique à interroger : on les
+    // confronte au montant du contrat, qui est une référence tout aussi
+    // légitime — et la seule dont dispose un foyer qui commence à saisir.
+    for (let i = 0; i < Math.min(MIN_HISTORY, sorted.length); i++) {
+      const bill = sorted[i];
+      const expected = bill.contractId ? contractCosts.get(bill.contractId) : undefined;
+      if (!expected) continue;
+
+      const deviation = ((bill.amount - expected) / expected) * 100;
+      if (deviation < DEVIATION_THRESHOLD) continue;
+
+      out.push({
+        id: `an_ct_${bill.id}`,
+        kind: 'ecart-contrat',
+        category: bill.category,
+        provider: bill.provider,
+        period: bill.period,
+        amount: round2(bill.amount),
+        reference: round2(expected),
+        deviationPercent: round2(deviation),
+        message: `Votre facture ${bill.provider} de ${periodLabel(bill.period)} dépasse de ${Math.round(deviation)} % le montant inscrit à votre contrat (${expected.toFixed(2)} €).`,
+        severity: deviation >= 50 ? 'risque' : deviation >= 35 ? 'attention' : 'info',
+      });
+    }
 
     for (let i = MIN_HISTORY; i < sorted.length; i++) {
       const bill = sorted[i];

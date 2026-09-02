@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Bill, CATEGORIES, Category, DocumentItem } from '../../core/models';
+import { MIN_HISTORY } from '../../core/services/anomaly.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
 import { SheetComponent } from '../../shared/components';
@@ -187,9 +188,11 @@ export class BillFormComponent {
     const memeFournisseur = this.store.bills().filter((b) => b.provider === bill.provider).length;
     this.ui.success(
       'Facture enregistrée',
-      memeFournisseur >= 3
-        ? `${memeFournisseur} périodes pour ${bill.provider} : les écarts inhabituels sont désormais détectables.`
-        : `${memeFournisseur} période(s) pour ${bill.provider}. À partir de trois, les anomalies deviennent détectables.`,
+      memeFournisseur > MIN_HISTORY
+        ? `${memeFournisseur} périodes pour ${bill.provider} : les écarts à votre moyenne habituelle sont détectés.`
+        : bill.contractId
+          ? `Comparée au montant de votre contrat. À partir de ${MIN_HISTORY + 1} périodes, la comparaison se fait sur votre propre historique.`
+          : `${memeFournisseur} période(s) pour ${bill.provider}. Rattachez-la à un contrat pour un contrôle immédiat, ou saisissez ${MIN_HISTORY + 1} périodes pour une comparaison sur l'historique.`,
     );
     this.created.emit(bill);
   }

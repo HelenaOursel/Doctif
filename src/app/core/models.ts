@@ -440,7 +440,13 @@ export interface RiskAssessment {
   factors: { label: string; points: number; detail: string }[];
 }
 
-export type AnomalyKind = 'facture-elevee' | 'prelevement-inhabituel' | 'hausse-brutale' | 'doublon-facture';
+export type AnomalyKind =
+  | 'facture-elevee'
+  | 'prelevement-inhabituel'
+  | 'hausse-brutale'
+  | 'doublon-facture'
+  /** Écart au montant inscrit au contrat, faute d'historique suffisant. */
+  | 'ecart-contrat';
 
 export interface Anomaly {
   id: string;

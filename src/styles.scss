@@ -521,6 +521,15 @@ input[type='checkbox'] {
   }
 }
 
+/* Pastille signalant un filtre actif, posée dans le bouton qui l'ouvre. */
+.dot-marker {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
 /* --- Chips de filtre --- */
 .chip {
   @include pressable;

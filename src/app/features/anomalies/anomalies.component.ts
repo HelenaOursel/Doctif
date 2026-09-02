@@ -288,7 +288,7 @@ export class AnomaliesComponent {
 
   iconFor(kind: string): 'trendUp' | 'duplicate' | 'anomalies' {
     if (kind === 'doublon-facture') return 'duplicate';
-    if (kind === 'hausse-brutale') return 'trendUp';
+    if (kind === 'hausse-brutale' || kind === 'ecart-contrat') return 'trendUp';
     return 'anomalies';
   }
 

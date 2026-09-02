@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { TranslatePipe } from '../../core/i18n/i18n.service';
-import { DOC_TYPE_LABEL, DocumentItem } from '../../core/models';
+import { Bill, DOC_TYPE_LABEL, DocumentItem } from '../../core/models';
 import { CaptureService } from '../../core/services/capture.service';
 import { ClassificationResult, ClassifierService } from '../../core/services/classifier.service';
 import { ExtractionService } from '../../core/services/extraction.service';
@@ -9,7 +9,7 @@ import { FileService } from '../../core/services/file.service';
 import { SyncService } from '../../core/services/sync.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
-import { uid } from '../../core/utils';
+import { period as periodOf, periodLabel, uid } from '../../core/utils';
 import { CategoryBadgeComponent, PageHeaderComponent, ProgressBarComponent } from '../../shared/components';
 import { IconComponent } from '../../shared/icon.component';
 import { CategoryLabelPipe, EuroPipe, FrDatePipe } from '../../shared/pipes';
@@ -210,6 +210,28 @@ const STEPS = [
               </label>
             }
           </div>
+        }
+
+        <!-- Facture détectée : proposée, jamais imposée — comme les échéances.
+             Sans elle, il fallait rouvrir la fiche du document et ressaisir un
+             formulaire déjà prérempli pour alimenter la détection d'anomalies. -->
+        @if (billCandidate(); as bill) {
+          <div class="section-head" style="margin-bottom: 8px"><h2>Facture détectée</h2></div>
+          <label class="row-card deadline-pick">
+            <input type="checkbox" [checked]="saveBill()" (change)="saveBill.set(!saveBill())" />
+            <span class="row-card__body">
+              <span class="row-card__title">Enregistrer comme facture {{ bill.provider }}</span>
+              <span class="row-card__meta">
+                {{ bill.amount | euro }} · {{ periodLabel(bill.period) }}
+                @if (bill.contractId) {
+                  · rattachée à votre contrat
+                }
+                @if (billAlreadyRecorded()) {
+                  <span class="badge badge--warning">Déjà enregistrée</span>
+                }
+              </span>
+            </span>
+          </label>
         }
 
         <details class="raw">
@@ -482,6 +504,57 @@ export class ScannerComponent {
 
   readonly detectedDeadlines = computed(() => this.classifier.detectDeadlines(this.extractedText()));
 
+  /** Coché par défaut : le relevé est le seul matériau de la détection. */
+  readonly saveBill = signal(true);
+
+  /**
+   * Facture déductible du classement.
+   *
+   * Trois conditions : le document est une facture, un montant en a été
+   * extrait, et l'émetteur est identifié — la détection d'anomalies regroupe
+   * par fournisseur, une ligne sans émetteur ne se rattacherait à rien.
+   */
+  readonly billCandidate = computed(() => {
+    const r = this.result();
+    if (!r || r.docType !== 'facture' || !r.amount || r.amount <= 0) return null;
+    if (!r.issuer || r.issuer === 'Émetteur inconnu') return null;
+
+    const provider = r.issuer.trim().toLowerCase();
+    const contract = this.store
+      .contracts()
+      .find((c) => c.status === 'actif' && c.provider.trim().toLowerCase() === provider);
+
+    return {
+      provider: r.issuer.trim(),
+      category: r.category,
+      // La période est celle que porte la facture, pas celle du dépôt.
+      period: periodOf(r.date),
+      amount: r.amount,
+      contractId: contract?.id,
+    };
+  });
+
+  /**
+   * Une facture identique est déjà enregistrée.
+   *
+   * Deux prélèvements identiques sur une même période sont précisément ce que
+   * la détection d'anomalies signale comme doublon. Scanner deux fois le même
+   * PDF déclencherait donc une fausse alerte : la case est décochée d'office,
+   * et l'utilisateur tranche.
+   */
+  readonly billAlreadyRecorded = computed(() => {
+    const bill = this.billCandidate();
+    if (!bill) return false;
+    return this.store
+      .bills()
+      .some(
+        (b) =>
+          b.provider === bill.provider && b.period === bill.period && Math.abs(b.amount - bill.amount) < 0.01,
+      );
+  });
+
+  protected readonly periodLabel = periodLabel;
+
   /** Appareil photo natif (application mobile uniquement). */
   async shootNative(): Promise<void> {
     const shot = await this.capture.takePhoto();
@@ -544,6 +617,7 @@ export class ScannerComponent {
 
     this.result.set(classification);
     this.selectedDeadlines.set(this.classifier.detectDeadlines(extracted.text).map((d) => d.date));
+    this.saveBill.set(!this.billAlreadyRecorded());
     this.busy.set(false);
   }
 
@@ -571,6 +645,22 @@ export class ScannerComponent {
       return;
     }
 
+    // Report de la facture détectée. Après le document : elle le référence.
+    const bill = this.billCandidate();
+    const billSaved = bill !== null && this.saveBill();
+    if (billSaved) {
+      const line: Bill = {
+        id: uid('b'),
+        category: bill.category,
+        provider: bill.provider,
+        period: bill.period,
+        amount: bill.amount,
+        contractId: bill.contractId,
+        documentId: doc.id,
+      };
+      this.store.addBill(line);
+    }
+
     // Report des échéances retenues dans le calendrier.
     let added = 0;
     for (const dl of this.detectedDeadlines()) {
@@ -593,9 +683,14 @@ export class ScannerComponent {
     // l'état est donc forcée avant l'envoi.
     const sent = await this.uploadOriginal(doc.id);
 
+    const suites = [
+      added ? `${added} échéance(s) ajoutée(s) au calendrier.` : '',
+      billSaved ? 'Facture enregistrée pour le suivi des anomalies.' : '',
+    ].filter(Boolean);
+
     this.ui.success(
       'Document ajouté au coffre',
-      added ? `${added} échéance(s) ajoutée(s) au calendrier.` : 'Classement et renommage appliqués.',
+      suites.length ? suites.join(' ') : 'Classement et renommage appliqués.',
     );
     if (!sent) {
       this.ui.warn(
