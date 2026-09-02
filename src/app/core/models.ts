@@ -83,6 +83,16 @@ export interface DocumentItem {
   confidence: number;
   /** Vignette : data-URL pour les documents scannés/photographiés. */
   thumbnail?: string;
+
+  /* --- Renseignés par le serveur -----------------------------------------
+     Le fichier d'origine vit en base, hors de cet état. Ces deux champs
+     décrivent sa présence pour que l'interface sache quoi proposer ; ils sont
+     ignorés à l'écriture, le client n'en est pas propriétaire. */
+
+  /** `true` si le fichier d'origine est stocké sur le serveur. */
+  hasFile?: boolean;
+  /** Type MIME du fichier stocké, pour choisir le mode d'aperçu. */
+  mimeType?: string;
 }
 
 export type ClauseSeverity = 'info' | 'attention' | 'risque';

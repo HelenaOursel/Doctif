@@ -2,10 +2,12 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '../../core/i18n/i18n.service';
-import { CATEGORIES, Category } from '../../core/models';
+import { CATEGORIES } from '../../core/models';
 import { ClassifierService } from '../../core/services/classifier.service';
 import { ExtractionService } from '../../core/services/extraction.service';
+import { FileService } from '../../core/services/file.service';
 import { SearchService } from '../../core/services/search.service';
+import { SyncService } from '../../core/services/sync.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
 import {
@@ -63,7 +65,6 @@ import { CategoryColorPipe, CategoryLabelPipe, EuroPipe, FrDatePipe, HighlightPi
         <app-icon class="dropzone__icon" name="upload" />
         <span>
           <strong>{{ 'vault.dropHint' | t }}</strong>
-          <small>PDF, photo, e-mail — classement et renommage automatiques</small>
         </span>
         <span class="btn btn--sm btn--primary dropzone__cta">
           <app-icon name="import" /> {{ 'vault.import' | t }}
@@ -111,12 +112,13 @@ import { CategoryColorPipe, CategoryLabelPipe, EuroPipe, FrDatePipe, HighlightPi
         >
           <app-icon [cls]="cat | catIconClass" />
           {{ cat | catLabel }}
-          <span class="chip__count">{{ countByCategory()[cat] ?? 0 }}</span>
         </button>
       }
     </div>
 
-    <p class="muted">{{ 'vault.results' | t: { count: results().length } }}</p>
+    @if (search.query() || search.hasActiveFilters()) {
+      <p class="muted">{{ 'vault.results' | t: { count: results().length } }}</p>
+    }
 
     <!-- Résultats -->
     @if (results().length) {
@@ -237,7 +239,7 @@ import { CategoryColorPipe, CategoryLabelPipe, EuroPipe, FrDatePipe, HighlightPi
         border: 2px dashed var(--border-strong);
         border-radius: 16px;
         background: var(--surface);
-        padding: 14px;
+        padding: 18px;
         transition:
           border-color 0.16s ease,
           background-color 0.16s ease;
@@ -263,12 +265,7 @@ import { CategoryColorPipe, CategoryLabelPipe, EuroPipe, FrDatePipe, HighlightPi
       }
       .dropzone__label strong {
         display: block;
-        font-size: 0.92rem;
-      }
-      .dropzone__label small {
-        display: block;
-        color: var(--text-muted);
-        font-size: 0.79rem;
+        font-size: 0.98rem;
       }
       .dropzone__cta {
         margin-left: auto;
@@ -277,8 +274,8 @@ import { CategoryColorPipe, CategoryLabelPipe, EuroPipe, FrDatePipe, HighlightPi
         display: flex;
         align-items: center;
         gap: 8px;
-        margin: 10px 0 0;
-        font-size: 0.82rem;
+        margin: 12px 0 0;
+        font-size: 0.86rem;
         color: var(--text-muted);
       }
 
@@ -302,12 +299,6 @@ import { CategoryColorPipe, CategoryLabelPipe, EuroPipe, FrDatePipe, HighlightPi
             box-shadow: none;
           }
         }
-      }
-
-      .chip__count {
-        font-size: 0.7rem;
-        opacity: 0.85;
-        font-variant-numeric: tabular-nums;
       }
 
       .dot-marker {
@@ -351,6 +342,8 @@ export class VaultComponent {
   private readonly extraction = inject(ExtractionService);
   private readonly classifier = inject(ClassifierService);
   private readonly ui = inject(UiService);
+  private readonly files = inject(FileService);
+  private readonly sync = inject(SyncService);
 
   readonly categories = CATEGORIES;
   readonly filtersOpen = signal(false);
@@ -359,15 +352,6 @@ export class VaultComponent {
 
   readonly results = this.search.results;
   readonly total = computed(() => this.store.documents().length);
-
-  readonly countByCategory = computed(() => {
-    const counts: Partial<Record<Category, number>> = {};
-    for (const d of this.store.documents()) {
-      if (d.archived) continue;
-      counts[d.category] = (counts[d.category] ?? 0) + 1;
-    }
-    return counts;
-  });
 
   onDragOver(event: DragEvent): void {
     event.preventDefault();
@@ -397,6 +381,7 @@ export class VaultComponent {
     this.importing.set(true);
     let added = 0;
     let simulated = 0;
+    const deposited: { id: string; file: File }[] = [];
 
     for (const file of files) {
       try {
@@ -411,20 +396,54 @@ export class VaultComponent {
           source: extracted.source,
           thumbnail: extracted.thumbnail,
         });
-        if (this.store.addDocument(doc)) added += 1;
+        if (this.store.addDocument(doc)) {
+          added += 1;
+          deposited.push({ id: doc.id, file });
+        }
       } catch {
         this.ui.error('Import impossible', `Le fichier « ${file.name} » n'a pas pu être lu.`);
       }
     }
+
+    // Les originaux partent en bloc, une fois les documents connus du serveur :
+    // un dépôt sur un identifiant inconnu serait refusé.
+    const notSent = await this.uploadOriginals(deposited);
 
     this.importing.set(false);
     if (added) {
       this.ui.success(
         `${added} document${added > 1 ? 's importés' : ' importé'}`,
         simulated
-          ? 'Classement automatique appliqué. Le texte des PDF et images est simulé dans cette démonstration.'
-          : 'Classement automatique appliqué à partir du contenu réel du fichier.',
+          ? "Classement appliqué. Le texte des images reste simulé, faute d'OCR."
+          : 'Classement appliqué à partir du contenu réel des fichiers.',
       );
     }
+    if (notSent) {
+      this.ui.warn(
+        `${notSent} original${notSent > 1 ? 'aux' : ''} non envoyé${notSent > 1 ? 's' : ''}`,
+        'Les documents sont enregistrés. Vous pourrez renvoyer les fichiers depuis leur fiche.',
+      );
+    }
+  }
+
+  /** Envoie les fichiers d'origine. Renvoie le nombre d'échecs. */
+  private async uploadOriginals(items: { id: string; file: File }[]): Promise<number> {
+    if (!items.length) return 0;
+    try {
+      await this.sync.flush();
+    } catch {
+      return items.length;
+    }
+
+    let failed = 0;
+    for (const { id, file } of items) {
+      try {
+        await this.files.upload(id, file, file.name);
+        this.store.updateDocument(id, { hasFile: true, mimeType: file.type || undefined });
+      } catch {
+        failed += 1;
+      }
+    }
+    return failed;
   }
 }

@@ -16,6 +16,8 @@ import {
 } from '../../shared/components';
 import { CategoryIconClassPipe, DocTypeIconClassPipe, IconComponent } from '../../shared/icon.component';
 import { EuroPipe, FrDatePipe, PercentPipe, RelativeDaysPipe } from '../../shared/pipes';
+import { FEATURES } from '../../core/features';
+import { ContractFormComponent } from './contract-form.component';
 
 @Component({
   selector: 'app-contract-detail',
@@ -34,12 +36,23 @@ import { EuroPipe, FrDatePipe, PercentPipe, RelativeDaysPipe } from '../../share
     FrDatePipe,
     PercentPipe,
     RelativeDaysPipe,
+    ContractFormComponent,
   ],
   template: `
     @if (contract(); as c) {
       <app-page-header [title]="c.label" [subtitle]="c.provider" backTo="/contrats">
         <app-cat-badge [category]="c.category" />
+        <button type="button" class="btn btn--sm btn--ghost" (click)="editOpen.set(true)">
+          <app-icon name="edit" /> Modifier
+        </button>
       </app-page-header>
+
+      <app-contract-form
+        [open]="editOpen()"
+        [contract]="c"
+        (close)="editOpen.set(false)"
+        (updated)="editOpen.set(false)"
+      />
 
       @if (c.status !== 'actif') {
         <div class="callout" style="margin-top: 14px">
@@ -197,7 +210,7 @@ import { EuroPipe, FrDatePipe, PercentPipe, RelativeDaysPipe } from '../../share
       }
 
       <!-- Offres concurrentes -->
-      @if (c.status === 'actif' && offers().length) {
+      @if (offersEnabled && c.status === 'actif' && offers().length) {
         <div class="section-head">
           <h2>Alternatives</h2>
           <a routerLink="/renouvellement">Tout comparer</a>
@@ -231,7 +244,9 @@ import { EuroPipe, FrDatePipe, PercentPipe, RelativeDaysPipe } from '../../share
           <button type="button" class="btn btn--danger grow" (click)="openLetter()">
             <app-icon name="gavel" /> Résilier ce contrat
           </button>
-          <a class="btn btn--ghost" routerLink="/renouvellement"><app-icon name="scale" /> Comparer</a>
+          @if (offersEnabled) {
+            <a class="btn btn--ghost" routerLink="/renouvellement"><app-icon name="scale" /> Comparer</a>
+          }
         </div>
       }
 
@@ -428,6 +443,12 @@ export class ContractDetailComponent {
   private readonly store = inject(Store);
   private readonly analysis = inject(AnalysisService);
   private readonly offersService = inject(OffersService);
+
+  /** Comparateur d'offres : voir core/features.ts. */
+  protected readonly offersEnabled = FEATURES.offers;
+
+  /** Feuille de modification du contrat. */
+  readonly editOpen = signal(false);
   protected readonly letters = inject(LetterService);
   private readonly ui = inject(UiService);
 

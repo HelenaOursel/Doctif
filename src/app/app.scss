@@ -5,6 +5,26 @@
   display: block;
 }
 
+/* ==========================================================================
+   Écran de connexion : pas de session, donc pas de navigation.
+   Masquer la coque en CSS plutôt que d'envelopper le gabarit dans une
+   condition évite de réindenter tout le fichier pour un seul écran.
+   ========================================================================== */
+:host(.app--anon) {
+  .app-header,
+  .app-drawer,
+  .drawer-overlay,
+  .app-sidebar,
+  .app-bottomnav {
+    display: none;
+  }
+
+  .app-main {
+    margin-left: auto;
+    padding-bottom: 40px;
+  }
+}
+
 /* Lien d'évitement, visible uniquement au clavier */
 .skip-link {
   position: absolute;
@@ -19,6 +39,21 @@
 
   &:focus {
     left: 0;
+  }
+}
+
+/* Indicateur de synchronisation, dans l'en-tête */
+.app-header__sync {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+
+  &--offline {
+    color: var(--warning, #d97706);
   }
 }
 
@@ -328,8 +363,8 @@
 
   @include up($bp-lg) {
     margin-left: $sidebar-w;
-    max-width: 1080px;
-    padding: 28px 34px 60px;
+    max-width: 940px;
+    padding: 32px 34px 64px;
   }
 }
 
@@ -421,8 +456,9 @@
     height: 46px;
     margin-top: -18px;
     border-radius: 50%;
-    background: var(--primary);
-    color: var(--primary-contrast);
+    background: var(--primary-surface);
+    border: 1px solid var(--primary-surface-border);
+    color: var(--on-primary-surface);
     box-shadow: var(--shadow-md);
     font-size: 1.2rem;
   }

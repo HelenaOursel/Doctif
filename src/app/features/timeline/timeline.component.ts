@@ -1,10 +1,9 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { TranslatePipe } from '../../core/i18n/i18n.service';
 import { TimelineEvent, TimelineKind } from '../../core/models';
 import { TimelineService } from '../../core/services/timeline.service';
-import { CategoryBadgeComponent, EmptyStateComponent, PageHeaderComponent } from '../../shared/components';
+import { CategoryBadgeComponent, EmptyStateComponent } from '../../shared/components';
 import { IconComponent } from '../../shared/icon.component';
 import { FrDatePipe } from '../../shared/pipes';
 
@@ -19,25 +18,22 @@ const KIND_META: Record<TimelineKind, { icon: 'contracts' | 'blocked' | 'money' 
   vehicule: { icon: 'catVehicule', label: 'Véhicule', color: 'var(--cat-vehicule)' },
 };
 
+/**
+ * Onglet « Historique » du calendrier : la même donnée temporelle, lue vers le
+ * passé. Le composant ne porte pas d’en-tête — c’est le calendrier qui l’affiche.
+ */
 @Component({
   selector: 'app-timeline',
   standalone: true,
   imports: [
     RouterLink,
     FormsModule,
-    TranslatePipe,
-    PageHeaderComponent,
     CategoryBadgeComponent,
     EmptyStateComponent,
     IconComponent,
     FrDatePipe,
   ],
   template: `
-    <app-page-header
-      [title]="'timeline.title' | t"
-      subtitle="Reconstituée automatiquement depuis vos contrats et vos documents."
-    />
-
     <!-- Recherche en langage naturel -->
     <div class="searchbar" style="margin-top: 16px">
       <app-icon name="search" />

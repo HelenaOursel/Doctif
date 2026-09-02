@@ -32,6 +32,17 @@
   --primary-soft: #e6ecf3;
   --primary-contrast: #f0e0c4;
 
+  /* Aplat des éléments d'action pleins (bouton principal, puce active, bouton
+     central de la barre inférieure). Distinct de `--primary`, qui reste une
+     couleur de *texte* (liens, état actif) : en mode clair l'aplat est un sable
+     à peine plus soutenu que le fond, quand le texte reste bleu nuit.
+     Un sable sur un fond sable ne peut pas atteindre les 3:1 exigés pour le
+     contour d'un contrôle : d'où une bordure franche, qui elle les atteint. */
+  --primary-surface: #e8dcc4;
+  --primary-surface-hover: #ded0b5;
+  --primary-surface-border: #9c8250;
+  --on-primary-surface: #0a1c31;
+
   /* Accent sable — pour les surfaces mises en avant */
   --accent: #a9832f;
   --accent-soft: #f7edd8;
@@ -92,6 +103,13 @@
   --primary-hover: #f7ecd8;
   --primary-soft: #17334f;
   --primary-contrast: #0a1c31;
+
+  /* En mode sombre l'aplat sable se détache déjà nettement du fond bleu nuit :
+     la bordure suit simplement l'aplat. */
+  --primary-surface: #f0e0c4;
+  --primary-surface-hover: #f7ecd8;
+  --primary-surface-border: #f0e0c4;
+  --on-primary-surface: #0a1c31;
 
   --accent: #f0e0c4;
   --accent-soft: #17334f;
@@ -253,7 +271,7 @@ hr {
   border-radius: $radius-sm;
   background: var(--surface-2);
   color: var(--text);
-  font-size: 0.9rem;
+  font-size: 0.94rem;
   font-weight: 600;
   cursor: pointer;
   user-select: none;
@@ -273,11 +291,12 @@ hr {
   }
 
   &--primary {
-    background: var(--primary);
-    color: var(--primary-contrast);
+    background: var(--primary-surface);
+    border-color: var(--primary-surface-border);
+    color: var(--on-primary-surface);
 
     &:hover:not(:disabled) {
-      background: var(--primary-hover);
+      background: var(--primary-surface-hover);
     }
   }
 
@@ -307,9 +326,9 @@ hr {
   }
 
   &--sm {
-    min-height: 34px;
-    padding: 5px 11px;
-    font-size: 0.8rem;
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 0.84rem;
   }
 
   &--lg {
@@ -336,10 +355,10 @@ hr {
 
   > label {
     display: block;
-    font-size: 0.78rem;
+    font-size: 0.82rem;
     font-weight: 600;
     color: var(--text-muted);
-    margin-bottom: 5px;
+    margin-bottom: 6px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -349,8 +368,8 @@ hr {
 .select,
 .textarea {
   width: 100%;
-  min-height: 44px;
-  padding: 10px 12px;
+  min-height: 46px;
+  padding: 11px 14px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: $radius-sm;
@@ -462,9 +481,9 @@ input[type='checkbox'] {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 9px;
+  padding: 4px 10px;
   border-radius: $radius-pill;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 650;
   line-height: 1.5;
   background: var(--surface-2);
@@ -508,24 +527,23 @@ input[type='checkbox'] {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 13px;
+  padding: 8px 14px;
   border-radius: $radius-pill;
   border: 1px solid var(--border-strong);
   background: var(--surface);
   color: var(--text-soft);
-  font-size: 0.82rem;
+  font-size: 0.86rem;
   font-weight: 600;
   cursor: pointer;
 
   &--active {
-    background: var(--primary);
-    border-color: var(--primary);
-    color: var(--primary-contrast);
+    background: var(--primary-surface);
+    border-color: var(--primary-surface-border);
+    color: var(--on-primary-surface);
 
     /* Sur le fond plein d'une chip active, un texte secondaire qui impose sa
        propre couleur perd tout contraste : il hérite de celle de la chip. */
-    .muted,
-    .chip__count {
+    .muted {
       color: inherit;
       opacity: 0.85;
     }
@@ -533,6 +551,17 @@ input[type='checkbox'] {
 }
 
 /* --- Titres de section --- */
+
+/* Cible d'ancre : sans marge de défilement, le titre visé se retrouve masqué
+   par l'en-tête collant. */
+[id] {
+  scroll-margin-top: calc(#{$header-h} + 14px + var(--safe-top));
+
+  @include up($bp-lg) {
+    scroll-margin-top: 20px;
+  }
+}
+
 .section-head {
   display: flex;
   align-items: baseline;
@@ -541,10 +570,10 @@ input[type='checkbox'] {
   /* Titre long + lien « Tout voir » : sur mobile la ligne se scinde au lieu
      de pousser le lien hors de l'écran. */
   flex-wrap: wrap;
-  margin: 22px 0 10px;
+  margin: 32px 0 14px;
 
   h2 {
-    font-size: 1rem;
+    font-size: 1.1rem;
     letter-spacing: -0.01em;
     min-width: 0;
   }
@@ -552,7 +581,7 @@ input[type='checkbox'] {
   a,
   button {
     flex: 0 0 auto;
-    font-size: 0.8rem;
+    font-size: 0.84rem;
     font-weight: 600;
   }
 }
@@ -565,7 +594,7 @@ input[type='checkbox'] {
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
 .row {
@@ -620,12 +649,12 @@ input[type='checkbox'] {
 table.data {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.86rem;
+  font-size: 0.9rem;
   min-width: 520px;
 
   th,
   td {
-    padding: 10px 12px;
+    padding: 12px 14px;
     text-align: left;
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
@@ -633,7 +662,7 @@ table.data {
 
   th {
     background: var(--surface-2);
-    font-size: 0.74rem;
+    font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
@@ -648,14 +677,14 @@ table.data {
 .list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
 .row-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 14px;
+  padding: 16px 18px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: $radius-md;
@@ -703,7 +732,7 @@ table.data {
 
   &__title {
     font-weight: 620;
-    font-size: 0.92rem;
+    font-size: 0.98rem;
     /* Ce titre est un <span> : resté inline, il ignorait `overflow` et
        `text-overflow` — la troncature n'avait jamais lieu et `nowrap` le
        poussait hors de l'écran. Le clamp sur deux lignes rétablit la coupe
@@ -716,8 +745,8 @@ table.data {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-    margin-top: 3px;
-    font-size: 0.78rem;
+    margin-top: 5px;
+    font-size: 0.84rem;
     color: var(--text-muted);
   }
 
@@ -729,7 +758,7 @@ table.data {
 
   &__amount {
     font-weight: 650;
-    font-size: 0.92rem;
+    font-size: 0.98rem;
   }
 }
 
@@ -739,7 +768,7 @@ table.data {
    élargit la colonne et fait déborder la grille. */
 .tile-grid {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   /* Toutes les tuiles adoptent la hauteur de la plus haute, y compris d'une
      ligne à l'autre : sans cela, un libellé sur deux lignes ou un indice
@@ -748,6 +777,18 @@ table.data {
 
   @include up($bp-md) {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* Décalage à l'arrivée : les tuiles se posent l'une après l'autre. Le retard
+     reste court, sinon la page paraît lente au lieu de paraître fluide. */
+  > *:nth-child(2) {
+    --stat-delay: 45ms;
+  }
+  > *:nth-child(3) {
+    --stat-delay: 90ms;
+  }
+  > *:nth-child(4) {
+    --stat-delay: 135ms;
   }
 }
 
@@ -761,12 +802,12 @@ table.data {
 /* Encart d'information / d'avertissement */
 .callout {
   display: flex;
-  gap: 11px;
-  padding: 12px 14px;
+  gap: 13px;
+  padding: 16px 18px;
   border-radius: $radius-md;
   background: var(--surface-2);
-  font-size: 0.86rem;
-  line-height: 1.5;
+  font-size: 0.92rem;
+  line-height: 1.55;
 
   /* Le bloc de texte doit céder avant l'icône. */
   > div {
@@ -937,6 +978,83 @@ mark.hit {
 }
 
 /* ==========================================================================
+   Transitions entre écrans
+   --------------------------------------------------------------------------
+   Reposent sur l'API View Transitions du navigateur, activée côté routeur par
+   `withViewTransitions`. Le contenu glisse latéralement dans le sens de la
+   navigation : vers la gauche quand on avance, vers la droite quand on revient.
+
+   L'instantané `root` ne couvre que la zone visible, jamais la hauteur totale
+   de la page : les écrans longs sont donc traités sans surcoût. Le chrome
+   persistant reçoit son propre nom de transition, ce qui l'extrait de cet
+   instantané et le laisse immobile pendant que le contenu se déplace.
+   ========================================================================== */
+@media (prefers-reduced-motion: no-preference) {
+  .app-header {
+    view-transition-name: app-header;
+  }
+  .app-bottomnav {
+    view-transition-name: app-bottomnav;
+  }
+  .app-sidebar {
+    view-transition-name: app-sidebar;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 280ms;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    animation-fill-mode: both;
+    /* Le fondu par défaut du navigateur utilise `plus-lighter`, qui délave les
+       couleurs dès qu'on pilote soi-même l'opacité. */
+    mix-blend-mode: normal;
+  }
+
+  ::view-transition-old(root) {
+    animation-name: page-leave;
+  }
+  ::view-transition-new(root) {
+    animation-name: page-enter;
+  }
+
+  /* Retour : les deux mouvements sont inversés. */
+  :root[data-nav='back']::view-transition-old(root) {
+    animation-name: page-leave-back;
+  }
+  :root[data-nav='back']::view-transition-new(root) {
+    animation-name: page-enter-back;
+  }
+}
+
+/* L'écran entrant parcourt une distance plus grande que le sortant : c'est lui
+   qu'on suit du regard, et c'est ce déséquilibre qui rend le sens lisible.
+   En pourcentage plutôt qu'en pixels, pour rester proportionné à l'écran. */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateX(10%);
+  }
+}
+@keyframes page-leave {
+  to {
+    opacity: 0;
+    transform: translateX(-5%);
+  }
+}
+@keyframes page-enter-back {
+  from {
+    opacity: 0;
+    transform: translateX(-10%);
+  }
+}
+@keyframes page-leave-back {
+  to {
+    opacity: 0;
+    transform: translateX(5%);
+  }
+}
+
+/* ==========================================================================
    Accessibilité / impression
    ========================================================================== */
 @media (prefers-reduced-motion: reduce) {
@@ -947,6 +1065,14 @@ mark.hit {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+
+  /* Le sélecteur universel ne couvre pas les pseudo-éléments de transition de
+     vue : le fondu par défaut du navigateur doit être neutralisé à part. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }
 

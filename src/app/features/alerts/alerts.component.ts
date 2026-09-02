@@ -1,29 +1,33 @@
 import { Component, computed, inject, signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '../../core/i18n/i18n.service';
 import { AlertItem, AlertLevel } from '../../core/models';
 import { DeadlineService } from '../../core/services/deadline.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
-import { CategoryBadgeComponent, EmptyStateComponent, PageHeaderComponent } from '../../shared/components';
+import { CategoryBadgeComponent, EmptyStateComponent } from '../../shared/components';
 import { DeadlineIconClassPipe, IconComponent } from '../../shared/icon.component';
 import { FrDatePipe, RelativeDaysPipe } from '../../shared/pipes';
 
 /** Ordre et présentation des paliers d'alerte. */
-const LEVELS: { level: AlertLevel; label: string; hint: string; tone: string }[] = [
-  { level: 'depassee', label: 'Dépassée', hint: 'La date limite est passée.', tone: 'danger' },
-  { level: 'J-1', label: 'J-1', hint: "C'est demain, ou aujourd'hui.", tone: 'danger' },
-  { level: 'J-7', label: 'J-7', hint: 'Dans une semaine au plus.', tone: 'warning' },
-  { level: 'J-30', label: 'J-30', hint: "Dans un mois — c'est le moment d'anticiper.", tone: 'info' },
+const LEVELS: { level: AlertLevel; label: string; tone: string }[] = [
+  { level: 'depassee', label: 'Dépassée', tone: 'danger' },
+  { level: 'J-1', label: "Demain ou aujourd'hui", tone: 'danger' },
+  { level: 'J-7', label: 'Dans la semaine', tone: 'warning' },
+  { level: 'J-30', label: 'Dans le mois', tone: 'info' },
 ];
 
+/**
+ * Onglet « Alertes » du calendrier.
+ *
+ * Écran fusionné : les alertes sont entièrement dérivées des échéances, elles
+ * n'ont donc plus de destination propre. Le composant ne porte pas d'en-tête —
+ * c'est le calendrier qui l'affiche.
+ */
 @Component({
   selector: 'app-alerts',
   standalone: true,
   imports: [
-    RouterLink,
     TranslatePipe,
-    PageHeaderComponent,
     CategoryBadgeComponent,
     EmptyStateComponent,
     IconComponent,
@@ -32,35 +36,21 @@ const LEVELS: { level: AlertLevel; label: string; hint: string; tone: string }[]
     RelativeDaysPipe,
   ],
   template: `
-    <app-page-header [title]="'alerts.title' | t" subtitle="Rappels automatiques à J-30, J-7 et J-1 avant chaque échéance.">
+    <!-- Filtre lu / non lu -->
+    <div class="row row--between wrap" style="margin: 14px 0 4px; gap: 8px">
+      <div class="row" style="gap: 8px">
+        <button type="button" class="chip" [class.chip--active]="!onlyUnread()" (click)="onlyUnread.set(false)">
+          Toutes ({{ alerts().length }})
+        </button>
+        <button type="button" class="chip" [class.chip--active]="onlyUnread()" (click)="onlyUnread.set(true)">
+          Non lues ({{ unreadCount() }})
+        </button>
+      </div>
       @if (unreadCount() > 0) {
         <button type="button" class="btn btn--sm btn--ghost" (click)="markAllRead()">
           <app-icon name="check" /> {{ 'action.markAllRead' | t }}
         </button>
       }
-    </app-page-header>
-
-    <!-- Rappel du fonctionnement -->
-    <div class="thresholds">
-      @for (l of levels; track l.level) {
-        @if (l.level !== 'depassee') {
-          <div class="threshold" [class]="'threshold--' + l.tone">
-            <strong>{{ l.label }}</strong>
-            <span>{{ l.hint }}</span>
-            <span class="threshold__count">{{ countFor(l.level) }}</span>
-          </div>
-        }
-      }
-    </div>
-
-    <!-- Filtre lu / non lu -->
-    <div class="row" style="margin: 16px 0 4px">
-      <button type="button" class="chip" [class.chip--active]="!onlyUnread()" (click)="onlyUnread.set(false)">
-        Toutes ({{ alerts().length }})
-      </button>
-      <button type="button" class="chip" [class.chip--active]="onlyUnread()" (click)="onlyUnread.set(true)">
-        Non lues ({{ unreadCount() }})
-      </button>
     </div>
 
     @if (visible().length) {
@@ -68,14 +58,14 @@ const LEVELS: { level: AlertLevel; label: string; hint: string; tone: string }[]
         @if (group.items.length) {
           <div class="section-head">
             <h2 [class]="'text-' + group.tone">{{ group.label }}</h2>
-            <span class="muted">{{ group.hint }}</span>
+            <span class="muted">{{ group.items.length }}</span>
           </div>
           <div class="list">
             @for (a of group.items; track a.id) {
-              <a
+              <button
+                type="button"
                 class="row-card alert"
                 [class.alert--unread]="!a.read"
-                routerLink="/calendrier"
                 (click)="markRead(a)"
               >
                 <span class="row-card__icon" [class]="'row-card__icon--' + group.tone">
@@ -94,7 +84,7 @@ const LEVELS: { level: AlertLevel; label: string; hint: string; tone: string }[]
                     <span class="alert__dot" aria-label="Non lue"></span>
                   }
                 </span>
-              </a>
+              </button>
             }
           </div>
         }
@@ -104,62 +94,18 @@ const LEVELS: { level: AlertLevel; label: string; hint: string; tone: string }[]
         icon="success"
         [title]="onlyUnread() ? 'Aucune alerte non lue' : ('alerts.empty' | t)"
         hint="Les alertes apparaissent automatiquement à 30, 7 et 1 jour d'une échéance."
-      >
-        <a class="btn btn--sm btn--primary" style="margin-top: 12px" routerLink="/calendrier">Voir le calendrier</a>
-      </app-empty>
+      />
     }
   `,
   styles: [
     `
-      @use 'mixins' as *;
-
-      .thresholds {
-        display: grid;
-        gap: 8px;
-        margin-top: 18px;
-        grid-template-columns: minmax(0, 1fr);
-
-        @include up(600px) {
-          grid-template-columns: repeat(3, minmax(0, 1fr));
-        }
-      }
-      .threshold {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        padding: 12px 14px;
-        border-radius: 12px;
-        background: var(--surface);
+      button.row-card {
+        width: 100%;
+        text-align: left;
         border: 1px solid var(--border);
-        position: relative;
-
-        strong {
-          font-size: 0.9rem;
-        }
-        span {
-          font-size: 0.78rem;
-          color: var(--text-muted);
-        }
-      }
-      /* Le liseré gauche portait seul le niveau du seuil : sa couleur passe
-         sur le compteur, sans ajouter de bordure au bloc. */
-      .threshold__count {
-        position: absolute;
-        top: 10px;
-        right: 12px;
-        font-size: 1.15rem !important;
-        font-weight: 700;
-        color: var(--text) !important;
-        font-variant-numeric: tabular-nums;
-      }
-      .threshold--danger .threshold__count {
-        color: var(--danger) !important;
-      }
-      .threshold--warning .threshold__count {
-        color: var(--warning) !important;
-      }
-      .threshold--info .threshold__count {
-        color: var(--info) !important;
+        cursor: pointer;
+        font: inherit;
+        color: inherit;
       }
 
       .alert--unread {
@@ -208,7 +154,6 @@ export class AlertsComponent {
   private readonly store = inject(Store);
   private readonly ui = inject(UiService);
 
-  readonly levels = LEVELS;
   readonly onlyUnread = signal(false);
 
   readonly alerts = this.service.alerts;
@@ -223,10 +168,6 @@ export class AlertsComponent {
     })),
   );
 
-  countFor(level: AlertLevel): number {
-    return this.alerts().filter((a) => a.level === level).length;
-  }
-
   markRead(alert: AlertItem): void {
     if (alert.read) return;
     // Le mode archive n'empêche pas d'accuser réception d'une alerte : c'est
@@ -236,6 +177,7 @@ export class AlertsComponent {
 
   markAllRead(): void {
     this.service.markAllRead();
+    // En mode archive la mutation est refusée : ne pas annoncer un succès.
     if (this.store.readOnly()) return;
     this.ui.success('Alertes marquées comme lues');
   }

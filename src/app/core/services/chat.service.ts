@@ -5,6 +5,7 @@ import { euro, formatDate, normalize, percent, relativeDays, todayIso, uid } fro
 import { AnalysisService } from './analysis.service';
 import { AnomalyService } from './anomaly.service';
 import { DeadlineService } from './deadline.service';
+import { FEATURES } from '../features';
 import { ProceduresService } from './procedures.service';
 import { SearchService } from './search.service';
 import { TimelineService } from './timeline.service';
@@ -278,7 +279,8 @@ export class ChatService {
     return this.msg(lines.join('\n'), {
       links: [
         { label: 'Voir le détail des économies', route: '/economies' },
-        { label: 'Comparer des offres', route: '/renouvellement' },
+        // Proposer une comparaison d'offres mènerait à une route démontée.
+        ...(FEATURES.offers ? [{ label: 'Comparer des offres', route: '/renouvellement' }] : []),
       ],
     });
   }

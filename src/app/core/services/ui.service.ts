@@ -239,6 +239,36 @@ export class UiService {
     }
 
     const blob = new Blob([content], { type: mime });
+    this.saveBlobOnWeb(filename, blob);
+  }
+
+  /**
+   * Enregistre un contenu binaire — un PDF ou une image d'origine.
+   *
+   * `download()` ne convient pas : il écrit en UTF-8 et corromprait tout ce qui
+   * n'est pas du texte. Sur mobile, `Filesystem` accepte du base64 dès lors
+   * qu'aucun `encoding` n'est précisé.
+   */
+  async downloadBlob(filename: string, blob: Blob): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Filesystem.writeFile({
+          path: filename,
+          data: await blobToBase64(blob),
+          directory: Directory.Documents,
+          recursive: true,
+        });
+        this.success('Fichier enregistré', `${filename} — dossier Documents`);
+      } catch {
+        this.error('Enregistrement impossible', "L'accès au stockage a été refusé.");
+      }
+      return;
+    }
+
+    this.saveBlobOnWeb(filename, blob);
+  }
+
+  private saveBlobOnWeb(filename: string, blob: Blob): void {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -246,6 +276,16 @@ export class UiService {
     a.click();
     URL.revokeObjectURL(url);
   }
+}
+
+/** `FileReader` renvoie une data-URL ; Filesystem attend le base64 seul. */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.readAsDataURL(blob);
+  });
 }
 
 function prefersReducedMotion(): boolean {

@@ -1,6 +1,8 @@
 import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslatePipe } from '../../core/i18n/i18n.service';
 import { ESTATE_KIND_LABEL, EstateAsset, EstateKind, FamilyMember } from '../../core/models';
 import { ProceduresService } from '../../core/services/procedures.service';
@@ -52,10 +54,18 @@ const KIND_ICONS: Record<EstateKind, 'catLogement' | 'catAssurance' | 'catBanque
     </app-page-header>
 
     <section class="tile-grid" style="margin-top: 18px">
-      <app-stat label="Patrimoine estimé" [value]="totalValue()" suffix="€" link="/succession" tone="primary" />
-      <app-stat label="Actifs recensés" [value]="assets().length" link="/succession" />
-      <app-stat label="Sans bénéficiaire" [value]="withoutBeneficiary().length" link="/succession" [tone]="withoutBeneficiary().length ? 'warning' : 'success'" />
-      <app-stat label="Pièces rattachées" [value]="linkedDocsCount()" link="/coffre" />
+      <!-- Somme des actifs listés plus bas : rien de plus précis à montrer. -->
+      <app-stat label="Patrimoine estimé" [value]="totalValue()" suffix="€" tone="primary" />
+      <app-stat label="Actifs recensés" [value]="assets().length" link="/succession" fragment="actifs" />
+      <app-stat
+        label="Sans bénéficiaire"
+        [value]="withoutBeneficiary().length"
+        link="/succession"
+        fragment="actifs"
+        [queryParams]="{ beneficiaire: 'aucun' }"
+        [tone]="withoutBeneficiary().length ? 'warning' : 'success'"
+      />
+      <app-stat label="Pièces rattachées" [value]="linkedDocsCount()" link="/succession" fragment="actifs" />
     </section>
 
     <!-- Préparation du dossier -->
@@ -90,6 +100,17 @@ const KIND_ICONS: Record<EstateKind, 'catLogement' | 'catAssurance' | 'catBanque
     }
 
     <!-- Actifs par nature -->
+    <div id="actifs" class="section-head">
+      <h2>Actifs</h2>
+      @if (beneficiaryFilter()) {
+        <button type="button" class="btn btn--sm btn--quiet" (click)="clearBeneficiaryFilter()">
+          <app-icon name="close" /> Sans bénéficiaire uniquement
+        </button>
+      } @else {
+        <span class="muted">{{ assets().length }}</span>
+      }
+    </div>
+
     @for (group of byKind(); track group.kind) {
       <div class="section-head">
         <h2>{{ kindLabel(group.kind) }}</h2>
@@ -295,6 +316,8 @@ const KIND_ICONS: Record<EstateKind, 'catLogement' | 'catAssurance' | 'catBanque
 export class EstateComponent {
   private readonly store = inject(Store);
   private readonly procedures = inject(ProceduresService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly ui = inject(UiService);
 
   readonly kinds = Object.keys(ESTATE_KIND_LABEL) as EstateKind[];
@@ -311,15 +334,34 @@ export class EstateComponent {
     return procedure ? this.procedures.check(procedure) : null;
   });
 
+  /** Filtre porté par l'URL : la tuile « Sans bénéficiaire » y renvoie. */
+  readonly beneficiaryFilter = toSignal(
+    this.route.queryParamMap.pipe(map((params) => params.get('beneficiaire'))),
+    { initialValue: null },
+  );
+
   readonly byKind = computed(() => {
     const order: EstateKind[] = ['immobilier', 'assurance-vie', 'compte', 'vehicule', 'objet', 'document'];
+    const source =
+      this.beneficiaryFilter() === 'aucun'
+        ? this.assets().filter((a) => a.beneficiaries.length === 0)
+        : this.assets();
     return order
       .map((kind) => {
-        const items = this.assets().filter((a) => a.kind === kind);
+        const items = source.filter((a) => a.kind === kind);
         return { kind, items, total: sum(items.map((i) => i.value ?? 0)) };
       })
       .filter((g) => g.items.length > 0);
   });
+
+  clearBeneficiaryFilter(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { beneficiaire: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 
   readonly formOpen = signal(false);
   readonly editingId = signal<string | null>(null);

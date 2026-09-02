@@ -1,12 +1,18 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { CATEGORIES, DOC_TYPE_LABEL, DocType } from '../../core/models';
+import { CATEGORIES, Contract, DOC_TYPE_LABEL, DocType } from '../../core/models';
+import { FileService } from '../../core/services/file.service';
+import { SyncService } from '../../core/services/sync.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
 import { CategoryBadgeComponent, CollapseComponent, EmptyStateComponent, PageHeaderComponent, SheetComponent } from '../../shared/components';
 import { DocTypeIconClassPipe, IconComponent } from '../../shared/icon.component';
 import { CategoryLabelPipe, EuroPipe, FileSizePipe, FrDatePipe } from '../../shared/pipes';
+import { ContractFormComponent } from '../contracts/contract-form.component';
+import { BillFormComponent } from '../anomalies/bill-form.component';
+import { TaxFormComponent } from '../tax/tax-form.component';
 
 @Component({
   selector: 'app-document-detail',
@@ -25,6 +31,9 @@ import { CategoryLabelPipe, EuroPipe, FileSizePipe, FrDatePipe } from '../../sha
     EuroPipe,
     FileSizePipe,
     FrDatePipe,
+    ContractFormComponent,
+    BillFormComponent,
+    TaxFormComponent,
   ],
   template: `
     @if (doc(); as d) {
@@ -36,7 +45,13 @@ import { CategoryLabelPipe, EuroPipe, FileSizePipe, FrDatePipe } from '../../sha
 
       <!-- Aperçu -->
       <div class="preview">
-        @if (d.thumbnail) {
+        @if (previewUrl(); as url) {
+          @if (isPdf()) {
+            <iframe class="preview__pdf" [src]="previewResource()" [title]="'Aperçu de ' + d.name"></iframe>
+          } @else {
+            <img [src]="url" [alt]="'Aperçu de ' + d.name" />
+          }
+        } @else if (d.thumbnail) {
           <img [src]="d.thumbnail" [alt]="'Aperçu de ' + d.name" />
         } @else {
           <div class="preview__placeholder">
@@ -45,6 +60,90 @@ import { CategoryLabelPipe, EuroPipe, FileSizePipe, FrDatePipe } from '../../sha
           </div>
         }
       </div>
+
+      <!-- Fichier d'origine -->
+      @if (d.hasFile) {
+        <div class="row wrap" style="margin-top: 12px">
+          <button type="button" class="btn btn--sm btn--ghost" [disabled]="downloading()" (click)="downloadOriginal()">
+            <app-icon name="download" /> Télécharger l'original
+          </button>
+        </div>
+      } @else {
+        <div class="callout callout--warning" style="margin-top: 12px">
+          <app-icon class="callout__icon" name="warning" />
+          <div>
+            <strong>Fichier d'origine non envoyé</strong>
+            <p>
+              Seuls le texte et le classement sont enregistrés. Choisissez le fichier pour l'ajouter au coffre.
+            </p>
+            <label class="btn btn--sm btn--ghost" style="margin-top: 8px">
+              <app-icon name="upload" /> Envoyer le fichier
+              <input type="file" hidden (change)="onFilePicked($event)" />
+            </label>
+          </div>
+        </div>
+      }
+
+      <!-- Rattachement à un contrat -->
+      @if (linkedContract(); as c) {
+        <a class="row-card" [routerLink]="['/contrats', c.id]" style="margin-top: 12px">
+          <span class="row-card__icon"><app-icon name="contracts" /></span>
+          <span class="row-card__body">
+            <span class="row-card__title">{{ c.label }}</span>
+            <span class="row-card__meta">Ce document est rattaché à ce contrat</span>
+          </span>
+          <app-icon name="chevronRight" />
+        </a>
+      }
+
+      @if (canTrackContract() || canTrackBill() || canTrackTax()) {
+        <div class="callout callout--info" style="margin-top: 12px">
+          <app-icon class="callout__icon" name="sparkles" />
+          <div>
+            <strong>Suivre ce document</strong>
+            <p>
+              Un document classé reste un fichier inerte. Le suivre lui donne des montants, des échéances et des
+              alertes.
+            </p>
+            <div class="row wrap" style="margin-top: 8px">
+              @if (canTrackContract()) {
+                <button type="button" class="btn btn--sm btn--primary" (click)="contractFormOpen.set(true)">
+                  <app-icon name="contracts" /> Créer un contrat
+                </button>
+              }
+              @if (canTrackBill()) {
+                <button type="button" class="btn btn--sm btn--ghost" (click)="billFormOpen.set(true)">
+                  <app-icon name="money" /> Enregistrer comme facture
+                </button>
+              }
+              @if (canTrackTax()) {
+                <button type="button" class="btn btn--sm btn--ghost" (click)="taxFormOpen.set(true)">
+                  <app-icon name="tax" /> Ajouter au suivi fiscal
+                </button>
+              }
+            </div>
+          </div>
+        </div>
+      }
+
+      <app-contract-form
+        [open]="contractFormOpen()"
+        [document]="doc() ?? null"
+        (close)="contractFormOpen.set(false)"
+        (created)="onContractCreated($event)"
+      />
+      <app-bill-form
+        [open]="billFormOpen()"
+        [document]="doc() ?? null"
+        (close)="billFormOpen.set(false)"
+        (created)="onBillCreated()"
+      />
+      <app-tax-form
+        [open]="taxFormOpen()"
+        [document]="doc() ?? null"
+        (close)="taxFormOpen.set(false)"
+        (created)="onTaxCreated()"
+      />
 
       <!-- Bandeau de confiance du classement -->
       <div
@@ -139,6 +238,13 @@ import { CategoryLabelPipe, EuroPipe, FileSizePipe, FrDatePipe } from '../../sha
 
       <!-- Actions -->
       <div class="row wrap" style="margin-top: 20px">
+        <!-- Toujours atteignable, y compris pour les documents que la mise en
+             avant ci-dessus ne juge pas assez évidents. -->
+        @if (canTrackContract() === false && !linkedContract()) {
+          <button type="button" class="btn btn--ghost" (click)="contractFormOpen.set(true)">
+            <app-icon name="contracts" /> Créer un contrat
+          </button>
+        }
         <button type="button" class="btn btn--ghost" (click)="toggleArchive()">
           <app-icon name="archive" />
           {{ d.archived ? 'Sortir des archives' : 'Archiver' }}
@@ -222,6 +328,13 @@ import { CategoryLabelPipe, EuroPipe, FileSizePipe, FrDatePipe } from '../../sha
         object-fit: contain;
         background: var(--surface-2);
       }
+      .preview__pdf {
+        display: block;
+        width: 100%;
+        height: 460px;
+        border: 0;
+        background: var(--surface-2);
+      }
       .preview__placeholder {
         display: flex;
         flex-direction: column;
@@ -261,6 +374,9 @@ export class DocumentDetailComponent {
   private readonly router = inject(Router);
   private readonly store = inject(Store);
   private readonly ui = inject(UiService);
+  private readonly files = inject(FileService);
+  private readonly sync = inject(SyncService);
+  private readonly sanitizer = inject(DomSanitizer);
 
   readonly categories = CATEGORIES;
   readonly docTypes = Object.keys(DOC_TYPE_LABEL) as DocType[];
@@ -270,6 +386,119 @@ export class DocumentDetailComponent {
 
   private readonly id = signal(this.route.snapshot.paramMap.get('id') ?? '');
   readonly doc = computed(() => this.store.documents().find((d) => d.id === this.id()));
+
+  /* --- Contrat rattaché ----------------------------------------------------- */
+
+  readonly contractFormOpen = signal(false);
+
+  readonly linkedContract = computed(() => {
+    const d = this.doc();
+    if (!d?.contractId) return null;
+    return this.store.contracts().find((c) => c.id === d.contractId) ?? null;
+  });
+
+  /**
+   * Mise en avant de la proposition.
+   *
+   * Le type seul ne suffit pas : un contrat EDF déposé en PDF est très souvent
+   * classé « facture », puisqu'il en porte le vocabulaire. La catégorie est le
+   * meilleur indice — énergie, internet ou assurance désignent des engagements
+   * récurrents, contrairement à une ordonnance ou un avis d'imposition.
+   *
+   * Ce n'est qu'une mise en avant : l'action reste accessible pour tout
+   * document, plus bas dans la page.
+   */
+  readonly looksLikeContract = computed(() => {
+    const d = this.doc();
+    if (!d) return false;
+    const typeParlant = d.docType === 'contrat' || d.docType === 'attestation' || d.docType === 'avis';
+    const categorieRecurrente = (['assurance', 'energie', 'internet', 'banque', 'logement', 'vehicule'] as const).some(
+      (c) => c === d.category,
+    );
+    return typeParlant || categorieRecurrente;
+  });
+
+  /** Une facture ponctuelle alimente la détection d'écarts de montant. */
+  readonly canTrackBill = computed(() => this.doc()?.docType === 'facture');
+
+  /** Avis d'imposition, taxe foncière : tout ce qui relève du suivi fiscal. */
+  readonly canTrackTax = computed(() => {
+    const d = this.doc();
+    return d?.category === 'impots' || d?.docType === 'avis';
+  });
+
+  readonly canTrackContract = computed(() => !this.linkedContract() && this.looksLikeContract());
+
+  readonly billFormOpen = signal(false);
+  readonly taxFormOpen = signal(false);
+
+  onContractCreated(contract: Contract): void {
+    this.contractFormOpen.set(false);
+    void this.router.navigate(['/contrats', contract.id]);
+  }
+
+  onBillCreated(): void {
+    this.billFormOpen.set(false);
+    void this.router.navigate(['/anomalies'], { fragment: 'factures' });
+  }
+
+  onTaxCreated(): void {
+    this.taxFormOpen.set(false);
+    void this.router.navigate(['/fiscal'], { fragment: 'historique' });
+  }
+
+  /* --- Fichier d'origine --------------------------------------------------- */
+
+  readonly previewUrl = signal<string | null>(null);
+  readonly downloading = signal(false);
+
+  readonly isPdf = computed(() => {
+    const d = this.doc();
+    return d?.mimeType === 'application/pdf' || /\.pdf$/i.test(d?.originalName ?? '');
+  });
+
+  /**
+   * Une URL `blob:` reste bloquée dans un `<iframe [src]>` sans marquage
+   * explicite : Angular traite ce contexte comme une ressource exécutable.
+   * Le contenu vient de notre propre API, l'autoriser est légitime.
+   */
+  readonly previewResource = computed<SafeResourceUrl | null>(() => {
+    const url = this.previewUrl();
+    return url ? this.sanitizer.bypassSecurityTrustResourceUrl(url) : null;
+  });
+
+  async downloadOriginal(): Promise<void> {
+    const d = this.doc();
+    if (!d) return;
+    this.downloading.set(true);
+    try {
+      await this.ui.downloadBlob(d.originalName, await this.files.blob(d.id));
+    } catch {
+      this.ui.error('Téléchargement impossible', "Le fichier n'a pas pu être récupéré du serveur.");
+    } finally {
+      this.downloading.set(false);
+    }
+  }
+
+  /** Renvoi manuel : le dépôt initial a échoué, ou le document est ancien. */
+  async onFilePicked(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    // Le champ est remis à zéro tout de suite : sans cela, resélectionner le
+    // même fichier après un échec ne déclencherait aucun événement.
+    input.value = '';
+    const d = this.doc();
+    if (!file || !d) return;
+
+    try {
+      await this.sync.flush();
+      await this.files.upload(d.id, file, file.name);
+      this.store.updateDocument(d.id, { hasFile: true, mimeType: file.type || undefined });
+      this.ui.success('Fichier envoyé', "L'original est désormais conservé sur le serveur.");
+    } catch {
+      this.ui.error('Envoi impossible', 'Vérifiez que le serveur est accessible, puis réessayez.');
+    }
+  }
 
   readonly sharedMembers = computed(() => {
     const d = this.doc();
@@ -299,6 +528,18 @@ export class DocumentDetailComponent {
       this.draftIssuer = d.issuer;
       this.draftDate = d.date;
     }
+
+    // L'aperçu suit le document : il se recharge si le fichier arrive plus tard,
+    // par exemple après un renvoi manuel.
+    effect(async () => {
+      const current = this.doc();
+      // Sans fichier stocké, la vignette existante suffit à l'aperçu.
+      if (!current?.hasFile) {
+        this.previewUrl.set(null);
+        return;
+      }
+      this.previewUrl.set(await this.files.objectUrl(current.id));
+    });
   }
 
   docTypeLabel(type: DocType): string {

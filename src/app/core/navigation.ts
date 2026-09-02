@@ -16,7 +16,15 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-/** Structure de navigation partagée par le rail latéral et le tiroir mobile. */
+/**
+ * Structure de navigation partagée par le rail latéral et le tiroir mobile.
+ *
+ * Une destination par intention, pas une par écran : les alertes et la
+ * chronologie sont des vues du calendrier, les anomalies et le comparateur
+ * d'offres des vues des économies, l'archivage une section des paramètres.
+ * Ces écrans existent toujours — ils sont atteints par un onglet, et leurs
+ * anciennes URL redirigent vers l'onglet correspondant.
+ */
 export const NAV_GROUPS: NavGroup[] = [
   {
     titleKey: 'nav.group.daily',
@@ -43,7 +51,6 @@ export const NAV_GROUPS: NavGroup[] = [
         descKey: 'nav.calendar.desc',
         icon: 'calendar',
       },
-      { route: '/alertes', labelKey: 'nav.alerts', descKey: 'nav.alerts.desc', icon: 'alerts' },
     ],
   },
   {
@@ -51,8 +58,6 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { route: '/contrats', labelKey: 'nav.contracts', descKey: 'nav.contracts.desc', icon: 'contracts' },
       { route: '/economies', labelKey: 'nav.savings', descKey: 'nav.savings.desc', icon: 'savings' },
-      { route: '/renouvellement', labelKey: 'nav.renewal', descKey: 'nav.renewal.desc', icon: 'renewal' },
-      { route: '/anomalies', labelKey: 'nav.anomalies', descKey: 'nav.anomalies.desc', icon: 'anomalies' },
       {
         route: '/fiscal',
         labelKey: 'nav.tax',
@@ -74,20 +79,12 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { route: '/demenagement', labelKey: 'nav.moving', descKey: 'nav.moving.desc', icon: 'moving' },
       { route: '/succession', labelKey: 'nav.estate', descKey: 'nav.estate.desc', icon: 'estate' },
-      { route: '/chronologie', labelKey: 'nav.timeline', descKey: 'nav.timeline.desc', icon: 'timeline' },
     ],
   },
   {
     titleKey: 'nav.group.help',
     items: [
       { route: '/assistant', labelKey: 'nav.chat', descKey: 'nav.chat.desc', icon: 'chat' },
-      {
-        route: '/archives',
-        labelKey: 'nav.archive',
-        shortKey: 'nav.archive.short',
-        descKey: 'nav.archive.desc',
-        icon: 'archive',
-      },
       {
         route: '/parametres',
         labelKey: 'nav.settings',

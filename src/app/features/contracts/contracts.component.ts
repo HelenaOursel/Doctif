@@ -3,13 +3,14 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { map } from 'rxjs';
 import { TranslatePipe } from '../../core/i18n/i18n.service';
-import { ContractStatus } from '../../core/models';
+import { Contract, ContractStatus } from '../../core/models';
 import { AnalysisService } from '../../core/services/analysis.service';
 import { Store } from '../../core/store';
 import { daysUntil, sum } from '../../core/utils';
 import { EmptyStateComponent, PageHeaderComponent, StatTileComponent } from '../../shared/components';
 import { CategoryIconClassPipe, IconComponent } from '../../shared/icon.component';
 import { CategoryColorPipe, EuroPipe } from '../../shared/pipes';
+import { ContractFormComponent } from './contract-form.component';
 
 @Component({
   selector: 'app-contracts',
@@ -24,18 +25,27 @@ import { CategoryColorPipe, EuroPipe } from '../../shared/pipes';
     CategoryIconClassPipe,
     CategoryColorPipe,
     EuroPipe,
+    ContractFormComponent,
   ],
   template: `
-    <app-page-header [title]="'contracts.title' | t" subtitle="Clauses analysées, score de risque et résiliation assistée." />
+    <app-page-header [title]="'contracts.title' | t" subtitle="Clauses analysées, score de risque et résiliation assistée.">
+      <button type="button" class="btn btn--sm btn--primary" (click)="formOpen.set(true)">
+        <app-icon name="add" /> Nouveau contrat
+      </button>
+    </app-page-header>
+
+    <app-contract-form [open]="formOpen()" (close)="formOpen.set(false)" (created)="onCreated($event)" />
 
     <section class="tile-grid" style="margin-top: 18px">
-      <app-stat label="Contrats actifs" [value]="active().length" link="/contrats" />
-      <app-stat label="Coût mensuel" [value]="totalMonthly()" suffix="€" [decimals]="2" link="/contrats" />
-      <app-stat label="Coût annuel" [value]="totalMonthly() * 12" suffix="€" link="/contrats" />
+      <app-stat label="Contrats actifs" [value]="active().length" link="/contrats" fragment="liste" [queryParams]="{ statut: 'actif' }" />
+      <app-stat label="Coût mensuel" [value]="totalMonthly()" suffix="€" [decimals]="2" link="/contrats" fragment="liste" />
+      <!-- Simple multiplication du coût mensuel : aucun sous-ensemble à montrer. -->
+      <app-stat label="Coût annuel" [value]="totalMonthly() * 12" suffix="€" />
       <app-stat
         label="Risque élevé"
         [value]="highRiskCount()"
         link="/contrats"
+        fragment="liste"
         [queryParams]="{ risque: 'eleve' }"
         [tone]="highRiskCount() > 0 ? 'danger' : 'success'"
       />
@@ -66,7 +76,7 @@ import { CategoryColorPipe, EuroPipe } from '../../shared/pipes';
       </button>
     </div>
 
-    <div class="row" style="margin-bottom: 12px">
+    <div class="row" id="liste" style="margin-bottom: 12px">
       <label class="sortlabel" for="sort">Trier par</label>
       <select id="sort" class="select" style="max-width: 220px" [value]="sort()" (change)="onSort($event)">
         <option value="cout">Coût décroissant</option>
@@ -114,6 +124,17 @@ import { CategoryColorPipe, EuroPipe } from '../../shared/pipes';
           <button type="button" class="btn btn--sm btn--ghost" style="margin-top: 12px" (click)="toggleRiskFilter()">
             <app-icon name="refresh" /> Voir tous les contrats
           </button>
+        } @else {
+          <p class="muted" style="margin: 8px 0 0">
+            Un contrat scanné arrive d'abord dans le coffre comme document. Créez-le ici, ou depuis sa fiche pour
+            reprendre le fournisseur et la date déjà détectés.
+          </p>
+          <div class="row wrap" style="margin-top: 12px; justify-content: center">
+            <button type="button" class="btn btn--sm btn--primary" (click)="formOpen.set(true)">
+              <app-icon name="add" /> Nouveau contrat
+            </button>
+            <a class="btn btn--sm btn--ghost" routerLink="/coffre"><app-icon name="vault" /> Voir mes documents</a>
+          </div>
         }
       </app-empty>
     }
@@ -169,6 +190,14 @@ export class ContractsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
+  /** Feuille de création, partagée avec la fiche document. */
+  readonly formOpen = signal(false);
+
+  onCreated(contract: Contract): void {
+    this.formOpen.set(false);
+    void this.router.navigate(['/contrats', contract.id]);
+  }
+
   readonly statusFilters: { value: ContractStatus | 'tous'; label: string }[] = [
     { value: 'actif', label: 'Actifs' },
     { value: 'resilie', label: 'Résiliés' },
@@ -176,8 +205,24 @@ export class ContractsComponent {
     { value: 'tous', label: 'Tous' },
   ];
 
-  readonly status = signal<ContractStatus | 'tous'>('actif');
   readonly sort = signal<'cout' | 'risque' | 'echeance' | 'nom'>('cout');
+
+  /**
+   * Statut affiché. Comme le filtre de risque, il vit dans l'URL : une tuile
+   * d'un autre écran (« Contrats clos », depuis les archives) peut ainsi
+   * ouvrir directement la bonne vue.
+   */
+  private readonly statusParam = toSignal(
+    this.route.queryParamMap.pipe(map((params) => params.get('statut'))),
+    { initialValue: null },
+  );
+
+  readonly status = computed<ContractStatus | 'tous'>(() => {
+    const value = this.statusParam();
+    return this.statusFilters.some((f) => f.value === value)
+      ? (value as ContractStatus | 'tous')
+      : 'actif';
+  });
 
   /**
    * Filtre par niveau de risque. Il vit dans l'URL plutôt que dans un signal
@@ -254,18 +299,17 @@ export class ContractsComponent {
 
   /** Choisir un statut lève le filtre de risque : les deux sont exclusifs. */
   setStatus(status: ContractStatus | 'tous'): void {
-    this.status.set(status);
-    if (this.riskFilter()) this.setRiskParam(null);
+    this.patchParams({ statut: status, risque: null });
   }
 
   toggleRiskFilter(): void {
-    this.setRiskParam(this.riskFilter() ? null : 'eleve');
+    this.patchParams({ risque: this.riskFilter() ? null : 'eleve' });
   }
 
-  private setRiskParam(value: string | null): void {
+  private patchParams(queryParams: Record<string, string | null>): void {
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { risque: value },
+      queryParams,
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });

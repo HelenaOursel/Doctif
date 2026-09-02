@@ -25,7 +25,7 @@
 // ---------------------------------------------------------------------------
 // Surfaces
 // ---------------------------------------------------------------------------
-@mixin card($padding: 16px) {
+@mixin card($padding: 20px) {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: $radius-md;
@@ -48,8 +48,8 @@
 
 @mixin muted {
   color: var(--text-muted);
-  font-size: 0.82rem;
-  line-height: 1.45;
+  font-size: 0.86rem;
+  line-height: 1.5;
 }
 
 // Tronque le texte sur N lignes
@@ -114,6 +114,29 @@
     display: none;
   }
 
+  // Au doigt, le défilement se trouve tout seul et une barre n'encombrerait
+  // que l'écran. À la souris, elle est au contraire le seul indice qu'il reste
+  // quelque chose à droite : on la rend visible, fine et discrète.
+  @media (hover: hover) and (pointer: fine) {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+    padding-bottom: 6px;
+
+    &::-webkit-scrollbar {
+      display: block;
+      height: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 999px;
+    }
+  }
+
   > * {
     flex: 0 0 auto;
     scroll-snap-align: start;
@@ -121,7 +144,7 @@
 }
 
 // Grille auto-responsive
-@mixin auto-grid($min: 240px, $gap: 12px) {
+@mixin auto-grid($min: 240px, $gap: 16px) {
   display: grid;
   gap: $gap;
   grid-template-columns: repeat(auto-fill, minmax($min, 1fr));

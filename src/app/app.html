@@ -27,13 +27,32 @@
     <app-icon [name]="ui.theme() === 'dark' ? 'themeLight' : 'themeDark'" />
   </button>
 
-  <a class="app-header__btn app-header__bell" routerLink="/alertes" [attr.aria-label]="'app.alerts.aria' | t">
+  <a
+    class="app-header__btn app-header__bell"
+    routerLink="/calendrier"
+    [queryParams]="{ vue: 'alertes' }"
+    [attr.aria-label]="'app.alerts.aria' | t"
+  >
     <app-icon name="bell" />
     @if (unreadAlerts() > 0) {
       <span class="app-header__dot" aria-hidden="true">{{ unreadAlerts() > 9 ? '9+' : unreadAlerts() }}</span>
       <span class="sr-only">{{ 'app.alerts.unread' | t: { count: unreadAlerts() } }}</span>
     }
   </a>
+
+  <!-- Signalé seulement quand il y a quelque chose à dire : une sauvegarde
+       réussie est le cas normal et n'a pas à occuper l'écran. -->
+  @if (sync.status() === 'hors-ligne') {
+    <span class="app-header__sync app-header__sync--offline" role="status">
+      <app-icon name="blocked" />
+      <span class="sr-only">Hors ligne : les modifications seront envoyées au retour du serveur.</span>
+    </span>
+  } @else if (sync.status() === 'en-cours') {
+    <span class="app-header__sync" role="status">
+      <app-icon name="refresh" />
+      <span class="sr-only">Synchronisation en cours.</span>
+    </span>
+  }
 </header>
 
 <!-- ================= Tiroir de navigation (mobile) ================= -->
@@ -73,7 +92,7 @@
           >
             <app-icon class="navlink__icon" [name]="item.icon" fw />
             <span class="navlink__label">{{ item.labelKey | t }}</span>
-            @if (item.route === '/alertes' && unreadAlerts() > 0) {
+            @if (item.route === '/calendrier' && unreadAlerts() > 0) {
               <span class="navlink__badge">{{ unreadAlerts() }}</span>
             }
           </a>
@@ -101,7 +120,7 @@
           <a class="navlink" [routerLink]="item.route" routerLinkActive="navlink--active" [title]="item.descKey | t">
             <app-icon class="navlink__icon" [name]="item.icon" fw />
             <span class="navlink__label">{{ item.labelKey | t }}</span>
-            @if (item.route === '/alertes' && unreadAlerts() > 0) {
+            @if (item.route === '/calendrier' && unreadAlerts() > 0) {
               <span class="navlink__badge">{{ unreadAlerts() }}</span>
             }
           </a>
@@ -127,7 +146,7 @@
         <strong>{{ 'app.readOnly.title' | t }}</strong>
         <p>{{ 'app.readOnly.body' | t }}</p>
       </div>
-      <a class="btn btn--sm btn--ghost" routerLink="/archives">{{ 'app.readOnly.manage' | t }}</a>
+      <a class="btn btn--sm btn--ghost" routerLink="/parametres">{{ 'app.readOnly.manage' | t }}</a>
     </div>
   }
 

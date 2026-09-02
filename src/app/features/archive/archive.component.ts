@@ -48,8 +48,8 @@ import { FrDatePipe } from '../../shared/pipes';
 
     <section class="tile-grid" style="margin-top: 16px">
       <app-stat label="Documents" [value]="allDocs().length" link="/coffre" />
-      <app-stat label="Archivés" [value]="archived().length" link="/archives" />
-      <app-stat label="Contrats clos" [value]="closedContracts().length" link="/contrats" />
+      <app-stat label="Archivés" [value]="archived().length" link="/archives" fragment="archives" />
+      <app-stat label="Contrats clos" [value]="closedContracts().length" link="/contrats" [queryParams]="{ statut: 'resilie' }" />
       <app-stat label="Ancienneté" [value]="ageYears()" suffix="ans" link="/chronologie" />
     </section>
 
@@ -118,7 +118,7 @@ import { FrDatePipe } from '../../shared/pipes';
     </div>
 
     <!-- Documents archivés -->
-    <div class="section-head">
+    <div class="section-head" id="archives">
       <h2>Documents archivés</h2>
       <span class="muted">{{ archived().length }}</span>
     </div>

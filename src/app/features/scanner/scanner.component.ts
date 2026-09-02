@@ -5,6 +5,8 @@ import { DOC_TYPE_LABEL, DocumentItem } from '../../core/models';
 import { CaptureService } from '../../core/services/capture.service';
 import { ClassificationResult, ClassifierService } from '../../core/services/classifier.service';
 import { ExtractionService } from '../../core/services/extraction.service';
+import { FileService } from '../../core/services/file.service';
+import { SyncService } from '../../core/services/sync.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
 import { uid } from '../../core/utils';
@@ -81,9 +83,11 @@ const STEPS = [
         <div>
           <strong>Comment fonctionne l'analyse</strong>
           <p>
-            Le texte des fichiers <code>.txt</code>, <code>.eml</code>, <code>.csv</code> et <code>.md</code> est
-            réellement lu et indexé. Pour les images et les PDF, cette démonstration front-end ne dispose pas de moteur
-            OCR : le texte est alors reconstitué à partir de modèles, ce qui est signalé sur le résultat.
+            Le contenu des <strong>PDF</strong> est réellement extrait par le serveur, tout comme celui des fichiers
+            <code>.txt</code>, <code>.eml</code>, <code>.csv</code> et <code>.md</code>, lus directement. Les
+            <strong>images</strong> — et les PDF scannés, qui n'en sont qu'un assemblage — n'ont pas de couche
+            texte : faute de moteur OCR, leur contenu est reconstitué à partir de modèles, ce qui est signalé sur le
+            résultat.
           </p>
         </div>
       </div>
@@ -171,14 +175,22 @@ const STEPS = [
           </ul>
         </div>
 
-        @if (!extractionReal()) {
+        @if (extractionReal()) {
+          <div class="callout callout--success" style="margin-top: 14px">
+            <app-icon class="callout__icon" name="success" />
+            <div>
+              <strong>Texte réellement extrait du fichier</strong>
+              <p>{{ extractionEngine() }} — le classement ci-dessus repose sur ce contenu.</p>
+            </div>
+          </div>
+        } @else {
           <div class="callout callout--warning" style="margin-top: 14px">
             <app-icon class="callout__icon" name="warning" />
             <div>
               <strong>Texte reconstitué</strong>
               <p>
-                Aucun moteur OCR n'est embarqué dans cette démonstration. Le contenu ci-dessous provient d'un modèle
-                choisi d'après le nom du fichier, et non de l'image elle-même.
+                {{ extractionEngine() }}. Le contenu ci-dessous provient d'un modèle choisi d'après le nom du
+                fichier, et non du document lui-même : vérifiez le classement.
               </p>
             </div>
           </div>
@@ -424,6 +436,8 @@ export class ScannerComponent {
   private readonly store = inject(Store);
   private readonly ui = inject(UiService);
   private readonly router = inject(Router);
+  private readonly files = inject(FileService);
+  private readonly sync = inject(SyncService);
   protected readonly capture = inject(CaptureService);
 
   protected readonly DOC_TYPE_LABEL = DOC_TYPE_LABEL;
@@ -441,9 +455,19 @@ export class ScannerComponent {
   readonly result = signal<ClassificationResult | null>(null);
   readonly extractedText = signal('');
   readonly extractionReal = signal(true);
+  /** Origine du texte affiché — « Extraction PDF (3 pages) », « OCR de démonstration »… */
+  readonly extractionEngine = signal('');
   readonly thumbnail = signal<string | undefined>(undefined);
   readonly originalName = signal('');
   readonly sizeKb = signal(0);
+  /**
+   * Fichier analysé, conservé jusqu'à l'enregistrement.
+   *
+   * L'analyse et l'enregistrement sont deux gestes distincts : sans cette
+   * référence, le fichier serait perdu entre les deux et seul son texte
+   * subsisterait.
+   */
+  private readonly pendingFile = signal<File | null>(null);
   readonly source = signal<DocumentItem['source']>('scan');
   readonly selectedDeadlines = signal<string[]>([]);
 
@@ -487,6 +511,7 @@ export class ScannerComponent {
     this.stepIndex.set(0);
     this.result.set(null);
     this.originalName.set(file.name);
+    this.pendingFile.set(file);
 
     // L'analyse est instantanée ; la progression est cadencée pour rendre
     // visibles les étapes réellement effectuées.
@@ -498,6 +523,7 @@ export class ScannerComponent {
     const extracted = await this.extraction.extract(file);
     this.extractedText.set(extracted.text);
     this.extractionReal.set(extracted.real);
+    this.extractionEngine.set(extracted.engine);
     this.thumbnail.set(extracted.thumbnail);
     this.sizeKb.set(extracted.sizeKb);
     this.source.set(mode === 'scan' ? 'scan' : extracted.source);
@@ -527,7 +553,7 @@ export class ScannerComponent {
     );
   }
 
-  save(): void {
+  async save(): Promise<void> {
     const r = this.result();
     if (!r) return;
 
@@ -562,17 +588,43 @@ export class ScannerComponent {
       added += 1;
     }
 
+    // Le fichier part après la création du document : le serveur refuse un
+    // dépôt sur un identifiant qu'il ne connaît pas. La synchronisation de
+    // l'état est donc forcée avant l'envoi.
+    const sent = await this.uploadOriginal(doc.id);
+
     this.ui.success(
       'Document ajouté au coffre',
       added ? `${added} échéance(s) ajoutée(s) au calendrier.` : 'Classement et renommage appliqués.',
     );
+    if (!sent) {
+      this.ui.warn(
+        'Fichier non envoyé',
+        "Le document est enregistré, mais l'original n'a pas pu être transmis. Vous pourrez le renvoyer depuis sa fiche.",
+      );
+    }
     void this.router.navigate(['/coffre', doc.id]);
+  }
+
+  /** Envoie le fichier d'origine. `false` si le serveur n'a pas pu le prendre. */
+  private async uploadOriginal(documentId: string): Promise<boolean> {
+    const file = this.pendingFile();
+    if (!file) return false;
+    try {
+      await this.sync.flush();
+      await this.files.upload(documentId, file, file.name);
+      this.store.updateDocument(documentId, { hasFile: true, mimeType: file.type || undefined });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   reset(): void {
     this.result.set(null);
     this.extractedText.set('');
     this.thumbnail.set(undefined);
+    this.pendingFile.set(null);
     this.stepIndex.set(0);
     this.selectedDeadlines.set([]);
   }

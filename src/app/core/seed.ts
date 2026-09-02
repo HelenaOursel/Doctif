@@ -8,6 +8,7 @@ import {
   FamilyMember,
   MovingProject,
   TaxRecord,
+  UserProfile,
 } from './models';
 import { addDays, addMonths, period, todayIso, uid } from './utils';
 
@@ -17,6 +18,43 @@ import { addDays, addMonths, period, todayIso, uid } from './utils';
  * échéances, alertes et anomalies restent pertinentes quel que soit le moment
  * où l'application est ouverte.
  */
+/**
+ * État vierge : un compte qui vient d'être créé.
+ *
+ * C'est la base de toute nouvelle session. Le jeu de démonstration
+ * (`buildSeedState`) n'est plus chargé qu'à la demande explicite, depuis les
+ * paramètres — sinon un compte neuf hériterait du profil et des documents
+ * fictifs de la démonstration.
+ */
+export function buildEmptyState(profile: Partial<UserProfile> = {}): AppState {
+  return {
+    version: 1,
+    profile: {
+      firstName: '',
+      lastName: '',
+      email: '',
+      address: '',
+      postalCode: '',
+      city: '',
+      phone: '',
+      birthDate: '',
+      readOnlyMode: false,
+      ...profile,
+    },
+    documents: [],
+    contracts: [],
+    deadlines: [],
+    members: [],
+    bills: [],
+    taxes: [],
+    estate: [],
+    moving: null,
+    chat: [],
+    readAlertIds: [],
+    timelineExtra: [],
+  };
+}
+
 export function buildSeedState(): AppState {
   const today = todayIso();
   const year = Number(today.slice(0, 4));

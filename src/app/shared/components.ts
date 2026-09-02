@@ -1,4 +1,4 @@
-import { NgClass } from '@angular/common';
+import { NgClass, NgTemplateOutlet } from '@angular/common';
 import {
   Component,
   ElementRef,
@@ -16,6 +16,7 @@ import {
 import { RouterLink } from '@angular/router';
 import { IconName } from '../core/icons';
 import { CATEGORY_META, Category } from '../core/models';
+import { NavDirectionService } from '../core/services/nav-direction.service';
 import { UiService } from '../core/services/ui.service';
 import { IconComponent } from './icon.component';
 import { CategoryLabelPipe } from './pipes';
@@ -30,7 +31,12 @@ import { CategoryLabelPipe } from './pipes';
   template: `
     <header class="ph">
       @if (backTo()) {
-        <a class="ph__back" [routerLink]="backTo()" aria-label="Revenir à l'écran précédent">
+        <a
+          class="ph__back"
+          [routerLink]="backTo()"
+          (click)="navDirection.markBack()"
+          aria-label="Revenir à l'écran précédent"
+        >
           <app-icon name="back" />
         </a>
       }
@@ -50,11 +56,11 @@ import { CategoryLabelPipe } from './pipes';
       .ph {
         display: flex;
         align-items: flex-start;
-        gap: 10px 12px;
+        gap: 12px 14px;
         /* Titre long + actions : sur mobile les actions passent à la ligne
            plutôt que d'écraser le titre ou de sortir de l'écran. */
         flex-wrap: wrap;
-        margin-bottom: 4px;
+        margin-bottom: 8px;
       }
       .ph__back {
         flex: 0 0 auto;
@@ -81,10 +87,10 @@ import { CategoryLabelPipe } from './pipes';
         }
       }
       p {
-        margin: 4px 0 0;
+        margin: 6px 0 0;
         color: var(--text-muted);
-        font-size: 0.85rem;
-        line-height: 1.45;
+        font-size: 0.9rem;
+        line-height: 1.5;
       }
       .ph__actions {
         display: flex;
@@ -100,6 +106,9 @@ import { CategoryLabelPipe } from './pipes';
   ],
 })
 export class PageHeaderComponent {
+  /** La flèche de retour remonte la hiérarchie : la transition doit s'inverser. */
+  protected readonly navDirection = inject(NavDirectionService);
+
   readonly title = input.required<string>();
   readonly subtitle = input<string>('');
   readonly backTo = input<string | null>(null);
@@ -126,7 +135,7 @@ export class PageHeaderComponent {
     `
       .empty {
         text-align: center;
-        padding: 34px 18px;
+        padding: 40px 22px;
         border: 1px dashed var(--border-strong);
         border-radius: 14px;
         background: var(--surface);
@@ -142,9 +151,9 @@ export class PageHeaderComponent {
         font-weight: 600;
       }
       .empty__hint {
-        margin: 6px 0 0;
+        margin: 8px 0 0;
         color: var(--text-muted);
-        font-size: 0.84rem;
+        font-size: 0.88rem;
         max-width: 44ch;
         margin-inline: auto;
         line-height: 1.5;
@@ -164,30 +173,59 @@ export class EmptyStateComponent {
 @Component({
   selector: 'app-stat',
   standalone: true,
-  imports: [RouterLink, NgClass],
+  imports: [RouterLink, NgClass, NgTemplateOutlet],
   template: `
-    <a class="stat" [ngClass]="'stat--' + tone()" [routerLink]="link()" [queryParams]="queryParams()">
+    @if (link()) {
+      <a
+        class="stat stat--link"
+        [ngClass]="'stat--' + tone()"
+        [routerLink]="link()"
+        [queryParams]="queryParams()"
+        [fragment]="fragment()"
+      >
+        <ng-container *ngTemplateOutlet="body" />
+      </a>
+    } @else {
+      <!-- Sans destination, la tuile ne doit pas se présenter comme cliquable. -->
+      <div class="stat" [ngClass]="'stat--' + tone()">
+        <ng-container *ngTemplateOutlet="body" />
+      </div>
+    }
+
+    <ng-template #body>
       <span class="stat__label">{{ label() }}</span>
       <span class="stat__value" #valueEl>{{ display() }}</span>
       @if (hint()) {
         <span class="stat__hint">{{ hint() }}</span>
       }
-    </a>
+    </ng-template>
   `,
   styles: [
     `
       @use 'mixins' as *;
 
+      /* Arrivée : la tuile descend en place. Le décalage est appliqué par la
+         grille (voir .tile-grid dans styles.scss) pour que les quatre se
+         posent l'une après l'autre plutôt que d'un bloc. */
+      @keyframes stat-drop {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+      }
+
       .stat {
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 4px;
+        animation: stat-drop 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        animation-delay: var(--stat-delay, 0ms);
         /* Item de grille : sans min-width nul, la tuile ne descend pas sous
            la largeur de son plus long mot et élargit la colonne. */
         min-width: 0;
         /* Occupe toute la rangée pour que les quatre tuiles s'alignent. */
         height: 100%;
-        padding: 14px;
+        padding: 18px;
         border-radius: 14px;
         background: var(--surface);
         border: 1px solid var(--border);
@@ -198,15 +236,19 @@ export class EmptyStateComponent {
           transform 0.12s ease,
           box-shadow 0.15s ease;
       }
-      .stat:hover {
+      /* Seule une tuile menant quelque part réagit au survol et au toucher. */
+      .stat--link {
+        cursor: pointer;
+      }
+      .stat--link:hover {
         text-decoration: none;
         box-shadow: var(--shadow-md);
       }
-      .stat:active {
+      .stat--link:active {
         transform: scale(0.99);
       }
       .stat__label {
-        font-size: 0.74rem;
+        font-size: 0.78rem;
         line-height: 1.35;
         text-transform: uppercase;
         letter-spacing: 0.05em;
@@ -231,8 +273,8 @@ export class EmptyStateComponent {
         }
       }
       .stat__hint {
-        font-size: 0.76rem;
-        line-height: 1.4;
+        font-size: 0.8rem;
+        line-height: 1.45;
         color: var(--text-muted);
         /* Ancré en bas : l'indice s'aligne d'une tuile à l'autre même quand
            le libellé du voisin occupe une ligne de plus. Deux lignes au plus,
@@ -262,9 +304,12 @@ export class StatTileComponent {
   readonly label = input.required<string>();
   readonly value = input.required<number>();
   readonly hint = input('');
-  readonly link = input<string>('.');
+  /** Destination. Vide, la tuile reste purement informative. */
+  readonly link = input<string | null>(null);
   /** Paramètres d'URL transmis au lien — sert aux tuiles qui filtrent l'écran. */
   readonly queryParams = input<Record<string, string> | null>(null);
+  /** Ancre de la section détaillant ce chiffre sur l'écran de destination. */
+  readonly fragment = input<string | undefined>(undefined);
   readonly tone = input<'neutral' | 'primary' | 'success' | 'warning' | 'danger'>('neutral');
   /** Suffixe ajouté à la valeur (« € », « % »…). */
   readonly suffix = input('');

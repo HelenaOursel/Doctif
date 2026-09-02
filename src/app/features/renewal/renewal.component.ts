@@ -1,24 +1,25 @@
 import { LowerCasePipe } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { TranslatePipe } from '../../core/i18n/i18n.service';
 import { Contract } from '../../core/models';
 import { LetterService } from '../../core/services/letter.service';
 import { OffersService } from '../../core/services/offers.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
-import { CategoryBadgeComponent, EmptyStateComponent, PageHeaderComponent } from '../../shared/components';
+import { CategoryBadgeComponent, EmptyStateComponent } from '../../shared/components';
 import { CategoryIconClassPipe, IconComponent } from '../../shared/icon.component';
 import { EuroPipe, RelativeDaysPipe } from '../../shared/pipes';
 
+/**
+ * Onglet « Offres » des économies. Le composant ne porte pas d’en-tête —
+ * c’est la coque « Économies » qui l’affiche.
+ */
 @Component({
   selector: 'app-renewal',
   standalone: true,
   imports: [
     RouterLink,
     LowerCasePipe,
-    TranslatePipe,
-    PageHeaderComponent,
     CategoryBadgeComponent,
     EmptyStateComponent,
     IconComponent,
@@ -27,11 +28,6 @@ import { EuroPipe, RelativeDaysPipe } from '../../shared/pipes';
     RelativeDaysPipe,
   ],
   template: `
-    <app-page-header
-      [title]="'renewal.title' | t"
-      subtitle="Avant chaque expiration, les alternatives du marché sont mises en regard de votre contrat."
-    />
-
     <!-- Transparence sur le modèle économique -->
     <div class="callout callout--info" style="margin-top: 16px">
       <app-icon class="callout__icon" name="info" />

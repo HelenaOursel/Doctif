@@ -1,6 +1,9 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
+import { map } from 'rxjs';
 import { TranslatePipe } from '../../core/i18n/i18n.service';
 import { CATEGORIES, DEADLINE_KIND_LABEL, Deadline, DeadlineKind } from '../../core/models';
 import { DeadlineService } from '../../core/services/deadline.service';
@@ -14,8 +17,17 @@ import {
 } from '../../shared/components';
 import { DeadlineIconClassPipe, IconComponent } from '../../shared/icon.component';
 import { CategoryLabelPipe, FrDatePipe, RelativeDaysPipe } from '../../shared/pipes';
+import { AlertsComponent } from '../alerts/alerts.component';
+import { TimelineComponent } from '../timeline/timeline.component';
 
 const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+type CalendarView = 'liste' | 'mois' | 'alertes' | 'historique';
+
+/** Onglet inconnu ou absent : on retombe sur la liste des échéances. */
+const normalizeView = (raw: string | null): CalendarView =>
+  raw === 'mois' || raw === 'alertes' || raw === 'historique' ? raw : 'liste';
+
 
 @Component({
   selector: 'app-calendar',
@@ -28,81 +40,100 @@ const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
     EmptyStateComponent,
     SheetComponent,
     IconComponent,
+    AlertsComponent,
+    TimelineComponent,
     DeadlineIconClassPipe,
     CategoryLabelPipe,
     FrDatePipe,
     RelativeDaysPipe,
   ],
   template: `
-    <app-page-header [title]="'calendar.title' | t" subtitle="Détectées depuis vos contrats et vos documents.">
-      <button type="button" class="btn btn--sm btn--primary" (click)="openCreate()">
-        <app-icon name="add" /> Ajouter
-      </button>
+    <app-page-header [title]="'calendar.title' | t">
+      @if (deadlineView()) {
+        <button type="button" class="btn btn--sm btn--primary" (click)="openCreate()">
+          <app-icon name="add" /> Ajouter
+        </button>
+      }
     </app-page-header>
 
-    <!-- Suggestions issues des contrats -->
-    @if (suggestions().length) {
-      <div class="callout callout--info" style="margin-top: 16px">
-        <app-icon class="callout__icon" name="sparkles" />
-        <div class="grow">
-          <strong>{{ suggestions().length }} échéance(s) déductible(s) de vos contrats</strong>
-          <p>Dates anniversaires, fins d'engagement et derniers jours pour résilier ne figurent pas encore au calendrier.</p>
-          <div class="row wrap" style="margin-top: 10px">
-            <button type="button" class="btn btn--sm btn--primary" (click)="acceptAll()">
-              <app-icon name="check" /> Tout ajouter
-            </button>
-            <button type="button" class="btn btn--sm btn--ghost" (click)="suggestionsOpen.set(true)">
-              <app-icon name="eye" /> Examiner
-            </button>
-          </div>
-        </div>
-      </div>
-    }
-
-    <!-- Bascule vue -->
-    <div class="row" style="margin-top: 16px">
-      <div class="segmented" role="tablist">
+    <!-- Vues d'une même donnée temporelle : les échéances à venir (en liste
+         ou en mois), les rappels qui en découlent, et l'historique écrit. -->
+    <div class="segmented" role="tablist" style="margin-top: 16px">
+      @for (tab of tabs; track tab.value) {
         <button
           type="button"
           role="tab"
-          [attr.aria-selected]="view() === 'liste'"
-          [class.segmented__btn--active]="view() === 'liste'"
           class="segmented__btn"
-          (click)="view.set('liste')"
+          [attr.aria-selected]="view() === tab.value"
+          [class.segmented__btn--active]="view() === tab.value"
+          (click)="setView(tab.value)"
         >
-          <app-icon name="clipboard" /> Liste
-        </button>
-        <button
-          type="button"
-          role="tab"
-          [attr.aria-selected]="view() === 'mois'"
-          [class.segmented__btn--active]="view() === 'mois'"
-          class="segmented__btn"
-          (click)="view.set('mois')"
-        >
-          <app-icon name="calendar" /> Mois
-        </button>
-      </div>
-    </div>
-
-    <!-- Filtres par catégorie -->
-    <div class="scroll-x" style="margin: 12px 0">
-      <button type="button" class="chip" [class.chip--active]="!categoryFilter()" (click)="categoryFilter.set(null)">
-        {{ 'common.all' | t }}
-      </button>
-      @for (c of categories; track c) {
-        <button
-          type="button"
-          class="chip"
-          [class.chip--active]="categoryFilter() === c"
-          (click)="categoryFilter.set(categoryFilter() === c ? null : c)"
-        >
-          {{ c | catLabel }}
+          <app-icon [name]="tab.icon" /> {{ tab.label }}
+          @if (tab.value === 'alertes' && unreadCount() > 0) {
+            <span class="segmented__badge">{{ unreadCount() }}</span>
+          }
         </button>
       }
     </div>
 
-    @if (view() === 'mois') {
+    @if (deadlineView()) {
+      <!-- Suggestions issues des contrats -->
+      @if (suggestions().length) {
+        <div class="callout callout--info" style="margin-top: 16px">
+          <app-icon class="callout__icon" name="sparkles" />
+          <div class="grow">
+            <strong>{{ suggestions().length }} échéance(s) déductible(s) de vos contrats</strong>
+            <div class="row wrap" style="margin-top: 10px">
+              <button type="button" class="btn btn--sm btn--primary" (click)="acceptAll()">
+                <app-icon name="check" /> Tout ajouter
+              </button>
+              <button type="button" class="btn btn--sm btn--ghost" (click)="suggestionsOpen.set(true)">
+                <app-icon name="eye" /> Examiner
+              </button>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- Filtre par état de traitement -->
+      <div class="scroll-x" style="margin: 12px 0 8px">
+        @for (f of statusFilters; track f.value) {
+          <button
+            type="button"
+            class="chip"
+            [class.chip--active]="statusFilter() === f.value"
+            [attr.aria-pressed]="statusFilter() === f.value"
+            (click)="statusFilter.set(f.value)"
+          >
+            {{ f.label }}
+            <span class="chip__count">{{ countForStatus(f.value) }}</span>
+          </button>
+        }
+      </div>
+
+      <!-- Filtres par catégorie -->
+      <div class="scroll-x" style="margin: 0 0 12px">
+        <button type="button" class="chip" [class.chip--active]="!categoryFilter()" (click)="categoryFilter.set(null)">
+          {{ 'common.all' | t }}
+        </button>
+        @for (c of categories; track c) {
+          <button
+            type="button"
+            class="chip"
+            [class.chip--active]="categoryFilter() === c"
+            (click)="categoryFilter.set(categoryFilter() === c ? null : c)"
+          >
+            {{ c | catLabel }}
+          </button>
+        }
+      </div>
+    }
+
+    @if (view() === 'alertes') {
+      <app-alerts />
+    } @else if (view() === 'historique') {
+      <app-timeline />
+    } @else if (view() === 'mois') {
       <!-- Vue mensuelle -->
       <div class="cal card">
         <div class="cal__head">
@@ -166,49 +197,57 @@ const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
       }
     } @else {
       <!-- Vue liste groupée -->
-      @if (overdue().length) {
-        <div class="section-head"><h2 class="text-danger">En retard</h2></div>
-        <div class="list">
-          @for (d of overdue(); track d.id) {
-            <ng-container *ngTemplateOutlet="row; context: { $implicit: d }" />
-          }
-        </div>
-      }
-
-      @for (group of groups(); track group.label) {
-        @if (group.items.length) {
-          <div class="section-head">
-            <h2>{{ group.label }}</h2>
-            <span class="muted">{{ group.items.length }}</span>
-          </div>
+      @if (showPending()) {
+        @if (overdue().length) {
+          <div class="section-head"><h2 class="text-danger">En retard</h2></div>
           <div class="list">
-            @for (d of group.items; track d.id) {
+            @for (d of overdue(); track d.id) {
               <ng-container *ngTemplateOutlet="row; context: { $implicit: d }" />
             }
           </div>
         }
-      }
 
-      @if (!overdue().length && !hasAny()) {
-        <app-empty icon="calendarEmpty" title="Aucune échéance à venir" hint="Ajoutez-en une, ou importez un document contenant une date limite." />
-      }
-
-      @if (doneList().length) {
-        <div class="section-head"><h2>Traitées</h2></div>
-        <div class="list">
-          @for (d of doneList(); track d.id) {
-            <div class="row-card row-card--done">
-              <span class="row-card__icon"><app-icon name="success" /></span>
-              <span class="row-card__body">
-                <span class="row-card__title">{{ d.title }}</span>
-                <span class="row-card__meta">{{ d.date | frDate }}</span>
-              </span>
-              <button type="button" class="btn btn--sm btn--quiet" (click)="toggleDone(d.id)" aria-label="Rouvrir">
-                <app-icon name="refresh" />
-              </button>
+        @for (group of groups(); track group.label) {
+          @if (group.items.length) {
+            <div class="section-head">
+              <h2>{{ group.label }}</h2>
+              <span class="muted">{{ group.items.length }}</span>
+            </div>
+            <div class="list">
+              @for (d of group.items; track d.id) {
+                <ng-container *ngTemplateOutlet="row; context: { $implicit: d }" />
+              }
             </div>
           }
-        </div>
+        }
+
+        @if (!overdue().length && !hasAny()) {
+          <app-empty icon="calendarEmpty" title="Aucune échéance à venir" hint="Ajoutez-en une, ou importez un document contenant une date limite." />
+        }
+      }
+
+      @if (showDone()) {
+        @if (doneList().length) {
+          @if (statusFilter() === 'toutes') {
+            <div class="section-head"><h2>Traitées</h2></div>
+          }
+          <div class="list">
+            @for (d of doneList(); track d.id) {
+              <div class="row-card row-card--done">
+                <span class="row-card__icon"><app-icon name="success" /></span>
+                <span class="row-card__body">
+                  <span class="row-card__title">{{ d.title }}</span>
+                  <span class="row-card__meta">{{ d.date | frDate }}</span>
+                </span>
+                <button type="button" class="btn btn--sm btn--ghost" (click)="toggleDone(d.id)">
+                  <app-icon name="refresh" /> Rouvrir
+                </button>
+              </div>
+            }
+          </div>
+        } @else if (statusFilter() === 'traitees') {
+          <app-empty icon="calendarEmpty" title="Aucune échéance traitée" hint="Les échéances que vous cochez viendront ici." />
+        }
       }
     }
 
@@ -301,25 +340,63 @@ const WEEKDAYS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
   `,
   styles: [
     `
+      @use 'mixins' as *;
+
+      .chip__count {
+        font-size: 0.7rem;
+        opacity: 0.85;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Une grille, jamais un défileur : quatre onglets côte à côte ne tiennent
+         pas sur un téléphone, et « Historique » s'y retrouvait coupé en deux
+         dans un contrôle qui n'a pas l'air de défiler. Deux colonnes sur deux
+         lignes en dessous de 600 px — rien n'est tronqué, il n'y a rien à
+         deviner. */
       .segmented {
-        display: inline-flex;
-        padding: 3px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px;
+        padding: 4px;
         border-radius: 12px;
         background: var(--surface-2);
-        gap: 3px;
+
+        /* 600 px : en dessous, « Historique » et son icône ne tiennent pas
+           dans un quart de la largeur disponible. */
+        @include up(600px) {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          /* Sur grand écran la barre n'a aucune raison de traverser la page. */
+          max-width: 620px;
+        }
       }
       .segmented__btn {
         display: inline-flex;
         align-items: center;
+        justify-content: center;
         gap: 7px;
-        padding: 7px 14px;
+        min-width: 0;
+        padding: 9px 10px;
         border: 0;
         border-radius: 9px;
         background: transparent;
         color: var(--text-muted);
-        font-size: 0.84rem;
+        font-size: 0.86rem;
         font-weight: 620;
+        white-space: nowrap;
         cursor: pointer;
+      }
+      .segmented__badge {
+        display: inline-grid;
+        place-items: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        border-radius: 999px;
+        background: var(--danger);
+        color: #fff;
+        font-size: 0.68rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
       }
       .segmented__btn--active {
         background: var(--surface);
@@ -421,13 +498,44 @@ export class CalendarComponent {
   private readonly service = inject(DeadlineService);
   private readonly store = inject(Store);
   private readonly ui = inject(UiService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   readonly categories = CATEGORIES;
   readonly kinds = Object.keys(DEADLINE_KIND_LABEL) as DeadlineKind[];
   readonly weekdays = WEEKDAYS;
 
-  readonly view = signal<'liste' | 'mois'>('liste');
+  readonly tabs = [
+    { value: 'liste' as const, label: 'Liste', icon: 'clipboard' as const },
+    { value: 'mois' as const, label: 'Mois', icon: 'calendar' as const },
+    { value: 'alertes' as const, label: 'Alertes', icon: 'bell' as const },
+    { value: 'historique' as const, label: 'Historique', icon: 'timeline' as const },
+  ];
+
+  /**
+   * L'onglet vit dans l'URL : les anciennes adresses (/alertes, /chronologie)
+   * y redirigent, et un lien partagé rouvre la bonne vue.
+   */
+  private readonly urlView = toSignal(this.route.queryParamMap.pipe(map((q) => normalizeView(q.get('vue')))), {
+    initialValue: normalizeView(this.route.snapshot.queryParamMap.get('vue')),
+  });
+  readonly view = linkedSignal(() => this.urlView());
+
+  readonly deadlineView = computed(() => this.view() === 'liste' || this.view() === 'mois');
+  readonly unreadCount = this.service.unreadCount;
   readonly categoryFilter = signal<string | null>(null);
+
+  /** Filtre par état de traitement. Par défaut, ce qui reste à faire. */
+  readonly statusFilters = [
+    { value: 'a-traiter' as const, label: 'À traiter' },
+    { value: 'traitees' as const, label: 'Traitées' },
+    { value: 'toutes' as const, label: 'Toutes' },
+  ];
+  readonly statusFilter = signal<'a-traiter' | 'traitees' | 'toutes'>('a-traiter');
+
+  readonly showPending = computed(() => this.statusFilter() !== 'traitees');
+  readonly showDone = computed(() => this.statusFilter() !== 'a-traiter');
+
   readonly selectedDate = signal<string>(todayIso());
   readonly suggestionsOpen = signal(false);
   readonly createOpen = signal(false);
@@ -435,6 +543,16 @@ export class CalendarComponent {
   private readonly cursor = signal(new Date());
 
   readonly suggestions = this.service.suggestions;
+
+  setView(view: CalendarView): void {
+    this.view.set(view);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { vue: view === 'liste' ? null : view },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 
   readonly month = computed(() => {
     const c = this.cursor();
@@ -482,8 +600,18 @@ export class CalendarComponent {
   readonly hasAny = computed(() => this.groups().some((g) => g.items.length > 0));
 
   readonly selectedDayDeadlines = computed(() =>
-    this.filtered().filter((d) => d.date === this.selectedDate()),
+    this.filtered()
+      .filter((d) => d.date === this.selectedDate())
+      .filter((d) => (d.done ? this.showDone() : this.showPending())),
   );
+
+  /** Compte affiché sur chaque puce de filtre, catégorie courante comprise. */
+  countForStatus(status: 'a-traiter' | 'traitees' | 'toutes'): number {
+    const list = this.filtered();
+    if (status === 'toutes') return list.length;
+    const done = status === 'traitees';
+    return list.filter((d) => d.done === done).length;
+  }
 
   /* Brouillon de création */
   draftTitle = '';
@@ -513,13 +641,18 @@ export class CalendarComponent {
   }
 
   toggleDone(id: string): void {
-    const before = this.store.deadlines().find((d) => d.id === id);
-    this.service.toggleDone(id);
+    // Le mode archive est vérifié avant la mutation, et non après : sinon le
+    // refus était signalé alors que l'écriture avait déjà été tentée.
     if (this.store.readOnly()) {
       this.ui.readOnlyBlocked();
       return;
     }
-    if (before && !before.done) this.ui.success('Échéance traitée', before.title);
+    const before = this.store.deadlines().find((d) => d.id === id);
+    this.service.toggleDone(id);
+    if (!before) return;
+    before.done
+      ? this.ui.info('Échéance rouverte', before.title)
+      : this.ui.success('Échéance traitée', before.title);
   }
 
   accept(deadline: Deadline): void {

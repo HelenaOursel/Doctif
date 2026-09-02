@@ -1,0 +1,18 @@
+{
+  "name": "admin-assistant-api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "API de l'assistant d'administration : authentification et persistance de l'état dans PostgreSQL.",
+  "scripts": {
+    "start": "node src/index.mjs",
+    "dev": "node --watch src/index.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pdfjs-dist": "^6.2.108",
+    "pg": "^8.16.3"
+  }
+}

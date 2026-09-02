@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { TranslatePipe } from '../../core/i18n/i18n.service';
 import { TAX_KIND_LABEL, TaxKind, TaxRecord } from '../../core/models';
@@ -8,6 +8,7 @@ import { daysUntil, groupBy, sum } from '../../core/utils';
 import { EmptyStateComponent, PageHeaderComponent, StatTileComponent } from '../../shared/components';
 import { IconComponent } from '../../shared/icon.component';
 import { EuroPipe, FrDatePipe, RelativeDaysPipe } from '../../shared/pipes';
+import { TaxFormComponent } from './tax-form.component';
 
 const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> = {
   'a-faire': { label: 'À faire', tone: 'danger' },
@@ -29,23 +30,30 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
     EuroPipe,
     FrDatePipe,
     RelativeDaysPipe,
+    TaxFormComponent,
   ],
   template: `
     <app-page-header
       [title]="'tax.title' | t"
       subtitle="Déclarations, avis d'imposition, taxes foncières et justificatifs de revenus."
-    />
+    >
+      <button type="button" class="btn btn--sm btn--primary" (click)="formOpen.set(true)">
+        <app-icon name="add" /> Ajouter
+      </button>
+    </app-page-header>
+
+    <app-tax-form [open]="formOpen()" (close)="formOpen.set(false)" (created)="formOpen.set(false)" />
 
     <section class="tile-grid" style="margin-top: 18px">
-      <app-stat label="À traiter" [value]="todo().length" link="/fiscal" [tone]="todo().length ? 'danger' : 'success'" />
-      <app-stat label="Dû cette année" [value]="dueThisYear()" suffix="€" link="/fiscal" tone="warning" />
-      <app-stat label="Payé cette année" [value]="paidThisYear()" suffix="€" link="/fiscal" tone="success" />
-      <app-stat label="Pièces archivées" [value]="taxDocuments().length" link="/coffre" />
+      <app-stat label="À traiter" [value]="todo().length" link="/fiscal" fragment="a-traiter" [tone]="todo().length ? 'danger' : 'success'" />
+      <app-stat label="Dû cette année" [value]="dueThisYear()" suffix="€" link="/fiscal" fragment="historique" tone="warning" />
+      <app-stat label="Payé cette année" [value]="paidThisYear()" suffix="€" link="/fiscal" fragment="historique" tone="success" />
+      <app-stat label="Pièces archivées" [value]="taxDocuments().length" link="/fiscal" fragment="pieces" />
     </section>
 
     <!-- Échéances fiscales imminentes -->
     @if (todo().length) {
-      <div class="section-head"><h2>Échéances à traiter</h2></div>
+      <div class="section-head" id="a-traiter"><h2>Échéances à traiter</h2></div>
       <div class="list">
         @for (t of todo(); track t.id) {
           <div class="row-card">
@@ -82,7 +90,7 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
     }
 
     <!-- Historique par année -->
-    <div class="section-head"><h2>Historique fiscal</h2></div>
+    <div class="section-head" id="historique"><h2>Historique fiscal</h2></div>
 
     @if (byYear().length) {
       @for (group of byYear(); track group.year) {
@@ -119,7 +127,7 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
     }
 
     <!-- Documents fiscaux du coffre -->
-    <div class="section-head">
+    <div class="section-head" id="pieces">
       <h2>Pièces fiscales du coffre</h2>
       <a routerLink="/coffre">Tout le coffre</a>
     </div>
@@ -191,6 +199,8 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
 export class TaxComponent {
   private readonly store = inject(Store);
   private readonly ui = inject(UiService);
+
+  readonly formOpen = signal(false);
 
   readonly reminders = [
     {

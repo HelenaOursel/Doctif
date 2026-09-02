@@ -14,7 +14,7 @@ import {
   TimelineEvent,
   UserProfile,
 } from './models';
-import { buildSeedState } from './seed';
+import { buildEmptyState, buildSeedState } from './seed';
 
 const STORAGE_KEY = 'assistant-admin.state.v1';
 
@@ -207,9 +207,32 @@ export class Store {
 
   /* --- Maintenance -------------------------------------------------------- */
 
-  /** Réinitialise l'application avec le jeu de démonstration. */
+  /** Charge le jeu de démonstration. Action explicite, depuis les paramètres. */
   reset(): void {
     this.state.set(buildSeedState());
+  }
+
+  /**
+   * Repart d'un état vierge — création de compte, déconnexion.
+   *
+   * `profile` permet de reprendre les coordonnées connues du compte, pour que
+   * l'utilisateur ne trouve pas un profil vide au premier écran.
+   */
+  clear(profile: Partial<UserProfile> = {}): void {
+    this.state.set(buildEmptyState(profile));
+  }
+
+  /**
+   * Remplace l'état par celui reçu du serveur.
+   *
+   * Contourne délibérément le garde-fou de `update()` : recharger n'est pas
+   * modifier, et le mode archive doit lui aussi pouvoir se synchroniser. La
+   * fusion se fait sur un état VIERGE, jamais sur la démonstration : une clé
+   * absente de la réponse doit donner une collection vide, pas des données
+   * fictives.
+   */
+  hydrate(state: AppState): void {
+    this.state.set({ ...buildEmptyState(), ...state });
   }
 
   /** Export JSON intégral — utilisé par l'archivage à vie. */
@@ -236,11 +259,13 @@ function load(storage: StorageService): AppState {
       const parsed = JSON.parse(raw) as AppState;
       if (parsed && Array.isArray(parsed.documents) && parsed.version === 1) {
         // Complète les champs éventuellement absents d'une version antérieure
-        return { ...buildSeedState(), ...parsed };
+        return { ...buildEmptyState(), ...parsed };
       }
     }
   } catch {
-    // Données corrompues : on repart du jeu de démonstration.
+    // Données corrompues : on repart de zéro plutôt que d'inventer un contenu.
   }
-  return buildSeedState();
+  // Aucune session, aucun cache : état vierge. La démonstration ne se charge
+  // que sur demande, depuis les paramètres.
+  return buildEmptyState();
 }

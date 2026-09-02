@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "web-app-db": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["db/mcp-server.mjs"],
+      "env": {
+        "PGHOST": "localhost",
+        "PGPORT": "5432",
+        "PGUSER": "postgres",
+        "PGDATABASE": "web_app"
+      }
+    }
+  }
+}

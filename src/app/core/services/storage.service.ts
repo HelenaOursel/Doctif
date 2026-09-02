@@ -7,6 +7,11 @@ export const STORAGE_KEYS = [
   'assistant-admin.state.v1',
   'assistant-admin.theme',
   'assistant-admin.locale',
+  // Jeton d'authentification. Il passe par ce service, et non par
+  // localStorage en direct, pour être conservé par le système sur mobile.
+  'assistant-admin.token',
+  // Version d'état connue du serveur, pour détecter les écritures concurrentes.
+  'assistant-admin.state-version',
 ] as const;
 
 export type StorageKey = (typeof STORAGE_KEYS)[number];

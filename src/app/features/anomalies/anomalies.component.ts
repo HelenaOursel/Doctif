@@ -1,52 +1,57 @@
-import { Component, computed, inject } from '@angular/core';
-import { TranslatePipe } from '../../core/i18n/i18n.service';
+import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
+import { map } from 'rxjs';
 import { AnomalyService, ProviderSeries } from '../../core/services/anomaly.service';
+import { Store } from '../../core/store';
 import { periodLabel } from '../../core/utils';
-import { CategoryBadgeComponent, EmptyStateComponent, PageHeaderComponent, StatTileComponent } from '../../shared/components';
+import { CategoryBadgeComponent, EmptyStateComponent } from '../../shared/components';
 import { CategoryIconClassPipe, IconComponent } from '../../shared/icon.component';
 import { EuroPipe, PercentPipe } from '../../shared/pipes';
+import { BillFormComponent } from './bill-form.component';
 
+/**
+ * Onglet « Anomalies » des économies : les factures anormales sont un motif
+ * d'économie parmi d'autres. Le composant ne porte pas d'en-tête — c'est la
+ * coque « Économies » qui l'affiche.
+ */
 @Component({
   selector: 'app-anomalies',
   standalone: true,
   imports: [
-    TranslatePipe,
-    PageHeaderComponent,
-    StatTileComponent,
     CategoryBadgeComponent,
     EmptyStateComponent,
     IconComponent,
     CategoryIconClassPipe,
     EuroPipe,
     PercentPipe,
+    BillFormComponent,
   ],
   template: `
-    <app-page-header
-      [title]="'anomalies.title' | t"
-      subtitle="Chaque facture est comparée à votre historique par fournisseur."
-    />
-
-    <section class="tile-grid" style="margin-top: 18px">
-      <app-stat
-        label="Anomalies"
-        [value]="anomalies().length"
-        link="/anomalies"
-        [tone]="anomalies().length ? 'warning' : 'success'"
-      />
-      <app-stat label="Critiques" [value]="critical()" link="/anomalies" [tone]="critical() ? 'danger' : 'neutral'" />
-      <app-stat label="Fournisseurs suivis" [value]="series().length" link="/anomalies" />
-      <app-stat label="Relevés analysés" [value]="totalPoints()" link="/anomalies" />
-    </section>
-
-    <!-- Anomalies détectées -->
-    <div class="section-head">
-      <h2>Anomalies détectées</h2>
-      <span class="muted">{{ anomalies().length }}</span>
+    <div class="row row--between wrap" style="margin: 16px 0 4px; gap: 8px">
+      <p class="muted">Chaque facture est comparée à l’historique du même fournisseur.</p>
+      <button type="button" class="btn btn--sm btn--primary" (click)="billFormOpen.set(true)">
+        <app-icon name="add" /> Ajouter une facture
+      </button>
     </div>
 
-    @if (anomalies().length) {
+    <app-bill-form [open]="billFormOpen()" (close)="billFormOpen.set(false)" (created)="billFormOpen.set(false)" />
+
+    <!-- Anomalies détectées -->
+    <div class="section-head" id="liste">
+      <h2>Anomalies détectées</h2>
+      @if (severityFilter()) {
+        <button type="button" class="btn btn--sm btn--quiet" (click)="clearSeverity()">
+          <app-icon name="close" /> Critiques uniquement
+        </button>
+      } @else {
+        <span class="muted">{{ anomalies().length }}</span>
+      }
+    </div>
+
+    @if (visible().length) {
       <div class="list">
-        @for (a of anomalies(); track a.id) {
+        @for (a of visible(); track a.id) {
           <div class="row-card anomaly" [class]="'anomaly--' + a.severity">
             <span class="row-card__icon" [class]="'row-card__icon--' + a.severity">
               <app-icon [name]="iconFor(a.kind)" />
@@ -58,14 +63,8 @@ import { EuroPipe, PercentPipe } from '../../shared/pipes';
                 <span>{{ a.provider }}</span>
                 <span>· {{ label(a.period) }}</span>
               </span>
-              <span class="anomaly__compare">
-                <span class="anomaly__bar">
-                  <span class="anomaly__ref" [style.width.%]="refWidth(a.reference, a.amount)"></span>
-                  <span class="anomaly__cur" [style.width.%]="100"></span>
-                </span>
-                <span class="anomaly__legend">
-                  Moyenne {{ a.reference | euro }} · relevé {{ a.amount | euro }}
-                </span>
+              <span class="anomaly__legend">
+                Moyenne {{ a.reference | euro }} · relevé {{ a.amount | euro }}
               </span>
             </span>
             <span class="row-card__side">
@@ -74,16 +73,62 @@ import { EuroPipe, PercentPipe } from '../../shared/pipes';
           </div>
         }
       </div>
-    } @else {
+    } @else if (severityFilter()) {
+      <app-empty icon="success" title="Aucune anomalie critique" hint="Les écarts relevés restent modérés.">
+        <button type="button" class="btn btn--sm btn--ghost" style="margin-top: 12px" (click)="clearSeverity()">
+          <app-icon name="refresh" /> Voir toutes les anomalies
+        </button>
+      </app-empty>
+    } @else if (bills().length) {
       <app-empty
         icon="success"
         title="Aucune anomalie détectée"
         hint="Vos factures suivent leur trajectoire habituelle."
       />
+    } @else {
+      <app-empty icon="inbox" title="Aucune facture enregistrée">
+        <p class="muted" style="margin: 8px 0 0">
+          La détection compare chaque montant à l'historique du même fournisseur. Sans facture, elle n'a rien à
+          comparer — comptez trois périodes avant que les écarts deviennent significatifs.
+        </p>
+        <button type="button" class="btn btn--sm btn--primary" style="margin-top: 12px" (click)="billFormOpen.set(true)">
+          <app-icon name="add" /> Ajouter ma première facture
+        </button>
+      </app-empty>
+    }
+
+    <!-- Factures enregistrées : sans cette liste, elles ne seraient visibles
+         nulle part, puisque seule la détection les consomme. -->
+    @if (bills().length) {
+      <div class="section-head" id="factures">
+        <h2>Factures enregistrées</h2>
+        <span class="muted">{{ bills().length }}</span>
+      </div>
+      <div class="list">
+        @for (b of recentBills(); track b.id) {
+          <div class="row-card">
+            <span class="row-card__icon row-card__icon--cat">
+              <app-icon [cls]="b.category | catIconClass" />
+            </span>
+            <span class="row-card__body">
+              <span class="row-card__title">{{ b.provider }}</span>
+              <span class="row-card__meta">{{ periodLabel(b.period) }}</span>
+            </span>
+            <span class="row-card__side">
+              <span class="row-card__amount">{{ b.amount | euro }}</span>
+            </span>
+          </div>
+        }
+      </div>
+      @if (bills().length > recentBills().length) {
+        <p class="muted" style="margin-top: 10px; font-size: 0.8rem">
+          {{ bills().length - recentBills().length }} facture(s) plus ancienne(s) non affichée(s).
+        </p>
+      }
     }
 
     <!-- Séries par fournisseur -->
-    <div class="section-head"><h2>Évolution par fournisseur</h2></div>
+    <div class="section-head" id="series"><h2>Évolution par fournisseur</h2></div>
 
     <div class="stack">
       @for (s of series(); track s.provider) {
@@ -130,37 +175,9 @@ import { EuroPipe, PercentPipe } from '../../shared/pipes';
   `,
   styles: [
     `
-      .anomaly__compare {
-        display: block;
-        margin-top: 8px;
-      }
-      .anomaly__bar {
-        position: relative;
-        display: block;
-        height: 6px;
-        border-radius: 999px;
-        background: var(--surface-3);
-        overflow: hidden;
-      }
-      .anomaly__cur,
-      .anomaly__ref {
-        position: absolute;
-        top: 0;
-        left: 0;
-        height: 100%;
-        border-radius: 999px;
-      }
-      .anomaly__cur {
-        background: var(--danger);
-        z-index: 0;
-      }
-      .anomaly__ref {
-        background: var(--text-muted);
-        z-index: 1;
-      }
       .anomaly__legend {
         display: block;
-        margin-top: 5px;
+        margin-top: 6px;
         font-size: 0.76rem;
         color: var(--text-muted);
       }
@@ -219,12 +236,43 @@ import { EuroPipe, PercentPipe } from '../../shared/pipes';
 })
 export class AnomaliesComponent {
   private readonly service = inject(AnomalyService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly store = inject(Store);
+
+  readonly billFormOpen = signal(false);
+  readonly bills = this.store.bills;
+
+  /** Les plus récentes d'abord ; la liste complète n'aurait pas d'usage ici. */
+  readonly recentBills = computed(() =>
+    [...this.bills()].sort((a, b) => b.period.localeCompare(a.period)).slice(0, 12),
+  );
+
+  protected readonly periodLabel = periodLabel;
 
   readonly anomalies = this.service.anomalies;
   readonly series = this.service.series;
   readonly critical = this.service.criticalCount;
 
-  readonly totalPoints = computed(() => this.series().reduce((a, s) => a + s.points.length, 0));
+  /** Filtre de gravité porté par l'URL, donc partageable et réversible. */
+  readonly severityFilter = toSignal(
+    this.route.queryParamMap.pipe(map((params) => params.get('gravite'))),
+    { initialValue: null },
+  );
+
+  readonly visible = computed(() => {
+    const severity = this.severityFilter();
+    return severity ? this.anomalies().filter((a) => a.severity === severity) : this.anomalies();
+  });
+
+  clearSeverity(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { gravite: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
 
   label(period: string): string {
     return periodLabel(period);
@@ -244,10 +292,6 @@ export class AnomaliesComponent {
     return 'anomalies';
   }
 
-  /** Largeur relative de la référence par rapport au relevé anormal. */
-  refWidth(reference: number, amount: number): number {
-    return amount > 0 ? Math.min(100, (reference / amount) * 100) : 0;
-  }
 
   barHeight(amount: number, series: ProviderSeries): number {
     const max = Math.max(...series.points.map((p) => p.amount), 1);

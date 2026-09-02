@@ -1,16 +1,28 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { I18nService, TranslatePipe } from '../../core/i18n/i18n.service';
+import { AuthService } from '../../core/services/auth.service';
+import { FileService, StorageUsage } from '../../core/services/file.service';
+import { SyncService } from '../../core/services/sync.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
 import { PageHeaderComponent, SheetComponent } from '../../shared/components';
 import { IconComponent } from '../../shared/icon.component';
+import { FileSizePipe } from '../../shared/pipes';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [RouterLink, FormsModule, TranslatePipe, PageHeaderComponent, SheetComponent, IconComponent],
+  imports: [
+    RouterLink,
+    FormsModule,
+    TranslatePipe,
+    PageHeaderComponent,
+    SheetComponent,
+    IconComponent,
+    FileSizePipe,
+  ],
   template: `
     <app-page-header [title]="'settings.title' | t" subtitle="Profil, apparence, langue et données." />
 
@@ -134,15 +146,19 @@ import { IconComponent } from '../../shared/icon.component';
         <span><strong>{{ counts().contracts }}</strong> contrats</span>
         <span><strong>{{ counts().deadlines }}</strong> échéances</span>
         <span><strong>{{ counts().members }}</strong> membres</span>
+        @if (usage(); as u) {
+          <span><strong>{{ u.count }}</strong> fichiers · {{ u.totalBytes / 1024 | fileSize }}</span>
+        }
       </div>
 
       <div class="callout callout--info" style="margin: 14px 0">
         <app-icon class="callout__icon" name="info" />
         <div>
-          <strong>Tout est stocké localement</strong>
+          <strong>Sauvegardé sur votre serveur</strong>
           <p>
-            Aucune donnée n'est transmise à un serveur. Vider le stockage du navigateur effacerait l'application —
-            exportez régulièrement votre archive.
+            Vos données sont enregistrées dans votre base PostgreSQL et conservées sur cet appareil pour rester
+            consultables hors ligne. Les fichiers d'origine y sont également stockés, dans la limite de 25 Mo par
+            document — l'archive exportée ci-dessous ne contient en revanche que les données, pas les fichiers.
           </p>
         </div>
       </div>
@@ -153,6 +169,29 @@ import { IconComponent } from '../../shared/icon.component';
           <app-icon name="refresh" /> Réinitialiser la démonstration
         </button>
       </div>
+    </div>
+
+    <!-- Compte -->
+    <div class="section-head"><h2>Compte</h2></div>
+    <div class="card">
+      <div class="datastat">
+        <span><strong>{{ store.profile().email || '—' }}</strong></span>
+        <span>{{ syncLabel() }}</span>
+      </div>
+
+      <div class="row wrap" style="margin-top: 16px">
+        <button type="button" class="btn btn--ghost" [disabled]="sync.pending()" (click)="syncNow()">
+          <app-icon name="refresh" /> Synchroniser maintenant
+        </button>
+        <button type="button" class="btn btn--danger" (click)="logout()">
+          <app-icon name="lock" /> Se déconnecter
+        </button>
+      </div>
+
+      <p class="footnote" style="margin-top: 14px">
+        La déconnexion efface la copie locale de cet appareil. Vos données restent sur le serveur et reviendront à
+        la prochaine connexion.
+      </p>
     </div>
 
     <p class="footnote">
@@ -255,11 +294,59 @@ import { IconComponent } from '../../shared/icon.component';
   ],
 })
 export class SettingsComponent {
-  private readonly store = inject(Store);
+  protected readonly store = inject(Store);
   protected readonly ui = inject(UiService);
   protected readonly i18n = inject(I18nService);
+  protected readonly sync = inject(SyncService);
+  private readonly auth = inject(AuthService);
+  private readonly files = inject(FileService);
+  private readonly router = inject(Router);
 
   readonly confirmReset = signal(false);
+
+  /** Volume occupé par les fichiers d'origine, chargé à l'ouverture de l'écran. */
+  protected readonly usage = signal<StorageUsage | null>(null);
+
+  protected readonly syncLabel = computed(() => {
+    const at = this.sync.lastSyncedAt();
+    switch (this.sync.status()) {
+      case 'en-cours':
+        return 'Synchronisation en cours…';
+      case 'hors-ligne':
+        return 'Hors ligne — les modifications partiront au retour du serveur.';
+      case 'conflit':
+        return 'Données rechargées depuis le serveur.';
+      case 'deconnecte':
+        return 'Non connecté.';
+      default:
+        return at ? `Synchronisé à ${at.toLocaleTimeString('fr-FR')}` : 'Synchronisé.';
+    }
+  });
+
+  constructor() {
+    // Le volume vient du serveur, pas de l'état : il n'a pas sa place dans le
+    // Store, et son échec ne doit rien empêcher.
+    void this.files
+      .usage()
+      .then((u) => this.usage.set(u))
+      .catch(() => undefined);
+  }
+
+  protected async syncNow(): Promise<void> {
+    await this.sync.flush();
+  }
+
+  protected async logout(): Promise<void> {
+    // L'envoi en attente part d'abord : se déconnecter ne doit pas perdre les
+    // dernières secondes de saisie.
+    await this.sync.flush();
+    this.auth.logout();
+    this.sync.reset();
+    // Vider, et non recharger la démonstration : rien de ce compte ne doit
+    // rester visible sur l'appareil après déconnexion.
+    this.store.clear();
+    await this.router.navigateByUrl('/connexion');
+  }
 
   /** Copie éditable du profil ; rien n'est écrit tant qu'on n'enregistre pas. */
   draft = { ...this.store.profile() };

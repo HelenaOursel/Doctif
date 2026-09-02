@@ -1,6 +1,11 @@
-import { Injectable } from '@angular/core';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { Injectable, inject } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
 import { DocSource } from '../models';
 import { normalize, todayIso } from '../utils';
+import { apiUrl } from './api';
+import { AuthService } from './auth.service';
+import { SyncService } from './sync.service';
 
 export interface ExtractionResult {
   text: string;
@@ -20,17 +25,40 @@ const TEXT_EXT = ['txt', 'csv', 'md', 'eml', 'json', 'log'];
  * Extraction du contenu d'un fichier déposé.
  *
  * - Fichiers texte / e-mails (.txt, .eml, .csv, .md, .json) : le contenu est
- *   réellement lu et indexé.
- * - Images et PDF : cette application est une démonstration front-end sans
- *   moteur OCR embarqué. Le texte est alors **simulé** à partir d'un jeu de
- *   modèles, choisi selon les indices disponibles (nom de fichier, type MIME).
- *   `real: false` permet à l'interface de le signaler sans ambiguïté.
+ *   réellement lu ici même.
+ * - PDF : le serveur en extrait le vrai texte. S'il est injoignable, on retombe
+ *   sur le texte simulé pour que le dépôt reste possible hors ligne.
+ * - Images : il faudrait un moteur d'OCR, absent de cette application. Le texte
+ *   reste **simulé** à partir d'un jeu de modèles, et `real: false` permet à
+ *   l'interface de le signaler sans ambiguïté.
  */
 @Injectable({ providedIn: 'root' })
 export class ExtractionService {
+  private readonly http = inject(HttpClient);
+  private readonly auth = inject(AuthService);
+  private readonly sync = inject(SyncService);
+
   async extract(file: File): Promise<ExtractionResult> {
     const ext = (file.name.split('.').pop() ?? '').toLowerCase();
     const sizeKb = Math.max(1, Math.round(file.size / 1024));
+
+    if (file.type === 'application/pdf' || ext === 'pdf') {
+      const fromServer = await this.extractPdfOnServer(file);
+      if (fromServer?.real && fromServer.text) {
+        return { text: fromServer.text, source: 'pdf', sizeKb, real: true, engine: fromServer.engine };
+      }
+      return {
+        text: this.simulateOcr(file.name),
+        source: 'pdf',
+        sizeKb,
+        real: false,
+        // Un PDF scanné et un serveur éteint donnent tous deux un texte simulé,
+        // mais pour des raisons opposées : le message doit les distinguer.
+        engine: fromServer
+          ? `${fromServer.engine} — texte simulé`
+          : 'Serveur injoignable — texte simulé',
+      };
+    }
 
     if (TEXT_LIKE.includes(file.type) || TEXT_EXT.includes(ext)) {
       const text = await file.text();
@@ -62,6 +90,35 @@ export class ExtractionService {
       real: false,
       engine: 'Extraction PDF de démonstration',
     };
+  }
+
+  /**
+   * Demande au serveur le texte réel d'un PDF.
+   *
+   * `null` signifie que le serveur n'a pas répondu — hors ligne ou non
+   * connecté. Une réponse avec `real: false` est au contraire un verdict : le
+   * PDF n'a pas de couche texte. Dans les deux cas le dépôt reste possible,
+   * l'extraction ne doit jamais le bloquer.
+   */
+  private async extractPdfOnServer(
+    file: Blob,
+  ): Promise<{ text: string; real: boolean; engine: string } | null> {
+    if (!this.auth.isAuthenticated()) return null;
+    try {
+      return await firstValueFrom(
+        this.http.post<{ text: string; real: boolean; engine: string }>(apiUrl('/extract'), file, {
+          headers: { 'Content-Type': 'application/pdf' },
+        }),
+      );
+    } catch (error) {
+      // Un 401 n'est pas une panne réseau : le jeton ne vaut plus rien. Le
+      // masquer derrière un texte simulé laisserait l'utilisateur enrichir son
+      // coffre avec du contenu inventé, sans comprendre pourquoi.
+      if (error instanceof HttpErrorResponse && error.status === 401) {
+        void this.sync.expireSession();
+      }
+      return null;
+    }
   }
 
   /** Capture depuis la caméra : même traitement qu'une photo importée. */
