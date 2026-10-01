@@ -59,10 +59,8 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
           <div class="row-card">
             <span class="row-card__icon row-card__icon--warning"><app-icon name="tax" /></span>
             <span class="row-card__body">
-              <span class="row-card__title">{{ kindLabel(t.kind) }} {{ t.year }}</span>
-              <span class="row-card__meta">
-                @if (t.dueDate) {
-                  <span>Échéance {{ t.dueDate | frDate: 'long' }}</span>
+              @if (t.dueDate) {
+                <span class="row-card__tags">
                   <span
                     class="badge"
                     [class.badge--danger]="daysLeft(t.dueDate) <= 7"
@@ -70,6 +68,15 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
                   >
                     {{ daysLeft(t.dueDate) | relDays }}
                   </span>
+                </span>
+              }
+              <span class="row-card__title">{{ kindLabel(t.kind) }} {{ t.year }}</span>
+              <span class="row-card__meta">
+                @if (t.amount) {
+                  <strong class="tax__amount">{{ t.amount | euro }}</strong>
+                }
+                @if (t.dueDate) {
+                  <span>{{ t.dueDate | frDate }}</span>
                 }
               </span>
               @if (t.note) {
@@ -77,9 +84,6 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
               }
             </span>
             <span class="row-card__side">
-              @if (t.amount) {
-                <span class="row-card__amount">{{ t.amount | euro }}</span>
-              }
               <button type="button" class="btn btn--sm btn--ghost" (click)="markPaid(t)">
                 <app-icon name="check" /> Fait
               </button>
@@ -104,13 +108,15 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
               <div class="row-card">
                 <span class="row-card__icon"><app-icon [name]="iconFor(t.kind)" /></span>
                 <span class="row-card__body">
-                  <span class="row-card__title">{{ kindLabel(t.kind) }}</span>
-                  <span class="row-card__meta">
+                  <span class="row-card__tags">
                     <span class="badge" [class]="'badge--' + statusTone(t.status)">{{ statusLabel(t.status) }}</span>
-                    @if (t.dueDate) {
-                      <span>{{ t.dueDate | frDate }}</span>
-                    }
                   </span>
+                  <span class="row-card__title">{{ kindLabel(t.kind) }}</span>
+                  @if (t.dueDate) {
+                    <span class="row-card__meta">
+                      <span>{{ t.dueDate | frDate }}</span>
+                    </span>
+                  }
                 </span>
                 <span class="row-card__side">
                   @if (t.amount) {
@@ -171,6 +177,8 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
   `,
   styles: [
     `
+      @use 'mixins' as *;
+
       .year__title {
         font-size: 1.05rem;
         letter-spacing: -0.02em;
@@ -180,15 +188,15 @@ const STATUS_META: Record<TaxRecord['status'], { label: string; tone: string }> 
         margin-top: 5px;
         font-size: 0.79rem;
         color: var(--text-muted);
+        @include clamp-lines(2);
+      }
+      .tax__amount {
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
       }
       .row-card__icon--warning {
         background: var(--warning-soft);
         color: var(--warning);
-      }
-      .row-card__side {
-        display: flex;
-        align-items: center;
-        gap: 10px;
       }
       .reminder__icon {
         color: var(--primary);

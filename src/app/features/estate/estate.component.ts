@@ -114,7 +114,15 @@ const KIND_ICONS: Record<EstateKind, 'catLogement' | 'catAssurance' | 'catBanque
     @for (group of byKind(); track group.kind) {
       <div class="section-head">
         <h2>{{ kindLabel(group.kind) }}</h2>
-        <span class="muted">{{ group.total | euro }}</span>
+        <span class="section-head__end">
+          <span class="muted">{{ group.total | euro }}</span>
+          <!-- Ajouter depuis le groupe : chercher le bouton de l'en-tête puis
+               choisir la nature dans une liste, c'est deux gestes de trop quand
+               on a sous les yeux le bien auquel on veut en ajouter un second. -->
+          <button type="button" class="btn btn--sm btn--quiet" (click)="openCreate(group.kind)">
+            <app-icon name="add" /> Ajouter
+          </button>
+        </span>
       </div>
       <div class="list">
         @for (a of group.items; track a.id) {
@@ -241,6 +249,12 @@ const KIND_ICONS: Record<EstateKind, 'catLogement' | 'catAssurance' | 'catBanque
   `,
   styles: [
     `
+      .section-head__end {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
       .checklist {
         list-style: none;
         margin: 14px 0 0;
@@ -301,11 +315,6 @@ const KIND_ICONS: Record<EstateKind, 'catLogement' | 'catAssurance' | 'catBanque
         font-size: 0.79rem;
         color: var(--text-muted);
         line-height: 1.45;
-      }
-      .row-card__side {
-        display: flex;
-        align-items: center;
-        gap: 8px;
       }
       a.badge {
         text-decoration: none;
@@ -409,10 +418,11 @@ export class EstateComponent {
     this.draftBeneficiaries.update((list) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]));
   }
 
-  openCreate(): void {
+  /** `kind` préselectionne la nature quand l'ajout part d'un groupe. */
+  openCreate(kind: EstateKind = 'immobilier'): void {
     this.editingId.set(null);
     this.draftLabel = '';
-    this.draftKind = 'immobilier';
+    this.draftKind = kind;
     this.draftValue = null;
     this.draftInstitution = '';
     this.draftNotes = '';

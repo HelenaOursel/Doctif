@@ -1,6 +1,6 @@
 import { Component, computed, effect, inject, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Bill, CATEGORIES, Category, DocumentItem } from '../../core/models';
+import { Bill, CATEGORIES, Category, Contract, DocumentItem } from '../../core/models';
 import { MIN_HISTORY } from '../../core/services/anomaly.service';
 import { UiService } from '../../core/services/ui.service';
 import { Store } from '../../core/store';
@@ -33,6 +33,10 @@ interface Draft {
       @if (document(); as d) {
         <p class="muted" style="margin: 0 0 16px">
           <app-icon name="info" /> Pré-rempli d'après « {{ d.name }} ».
+        </p>
+      } @else if (contract(); as c) {
+        <p class="muted" style="margin: 0 0 16px">
+          <app-icon name="info" /> Pré-rempli d'après votre contrat « {{ c.label }} ».
         </p>
       }
 
@@ -119,6 +123,15 @@ export class BillFormComponent {
 
   readonly open = input.required<boolean>();
   readonly document = input<DocumentItem | null>(null);
+  /**
+   * Contrat de départ.
+   *
+   * Une facture se saisit aussi bien depuis le contrat qu'elle règle que
+   * depuis le document qui la porte. Le document prime quand les deux sont
+   * fournis : il décrit une facture précise, là où le contrat n'en donne que
+   * le cadre.
+   */
+  readonly contract = input<Contract | null>(null);
 
   readonly close = output<void>();
   readonly created = output<Bill>();
@@ -142,6 +155,22 @@ export class BillFormComponent {
 
   private blank(): Draft {
     const d = this.document();
+    const c = this.contract();
+
+    if (!d && c) {
+      return {
+        provider: c.provider,
+        category: c.category,
+        // Aucune date à reprendre : la facture qu'on saisit depuis un contrat
+        // est celle du mois en cours jusqu'à preuve du contraire.
+        period: periodOf(todayIso()),
+        // Le montant du contrat sert de point de départ — c'est précisément
+        // l'écart à cette valeur que la détection cherche.
+        amount: c.monthlyCost || null,
+        contractId: c.id,
+      };
+    }
+
     return {
       provider: d?.issuer && d.issuer !== 'Émetteur inconnu' ? d.issuer : '',
       category: d?.category ?? 'autre',

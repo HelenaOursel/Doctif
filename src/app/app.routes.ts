@@ -20,6 +20,15 @@ export const routes: Routes = [
     loadComponent: () => import('./features/auth/login.component').then((m) => m.LoginComponent),
   },
 
+  // Ouverte depuis un lien reçu par e-mail : elle doit être atteignable sans
+  // session, comme la connexion.
+  {
+    path: 'reinitialisation',
+    title: 'Nouveau mot de passe — Assistant administratif',
+    loadComponent: () =>
+      import('./features/auth/reset-password.component').then((m) => m.ResetPasswordComponent),
+  },
+
   // Route sans segment servant uniquement de porte : le garde s'applique une
   // fois à l'ensemble des écrans, plutôt que d'être répété sur chacun.
   {

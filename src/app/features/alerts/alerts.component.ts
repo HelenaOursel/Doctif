@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { TranslatePipe } from '../../core/i18n/i18n.service';
 import { AlertItem, AlertLevel } from '../../core/models';
 import { DeadlineService } from '../../core/services/deadline.service';
@@ -36,22 +36,19 @@ const LEVELS: { level: AlertLevel; label: string; tone: string }[] = [
     RelativeDaysPipe,
   ],
   template: `
-    <!-- Filtre lu / non lu -->
-    <div class="row row--between wrap" style="margin: 14px 0 4px; gap: 8px">
-      <div class="row" style="gap: 8px">
-        <button type="button" class="chip" [class.chip--active]="!onlyUnread()" (click)="onlyUnread.set(false)">
-          Toutes ({{ alerts().length }})
-        </button>
-        <button type="button" class="chip" [class.chip--active]="onlyUnread()" (click)="onlyUnread.set(true)">
-          Non lues ({{ unreadCount() }})
-        </button>
+    @if (filtersOpen()) {
+      <div class="filterpanel">
+        <p class="filter-group">Filtrer par état</p>
+        <div class="chip-wrap">
+          <button type="button" class="chip" [class.chip--active]="!onlyUnread()" (click)="onlyUnread.set(false)">
+            Toutes ({{ alerts().length }})
+          </button>
+          <button type="button" class="chip" [class.chip--active]="onlyUnread()" (click)="onlyUnread.set(true)">
+            Non lues ({{ unreadCount() }})
+          </button>
+        </div>
       </div>
-      @if (unreadCount() > 0) {
-        <button type="button" class="btn btn--sm btn--ghost" (click)="markAllRead()">
-          <app-icon name="check" /> {{ 'action.markAllRead' | t }}
-        </button>
-      }
-    </div>
+    }
 
     @if (visible().length) {
       @for (group of grouped(); track group.level) {
@@ -72,14 +69,16 @@ const LEVELS: { level: AlertLevel; label: string; tone: string }[] = [
                   <app-icon [cls]="a.kind | deadlineIconClass" />
                 </span>
                 <span class="row-card__body">
+                  <span class="row-card__tags">
+                    <span class="badge" [class]="'badge--' + group.tone">{{ a.daysLeft | relDays }}</span>
+                    <app-cat-badge [category]="a.category" />
+                  </span>
                   <span class="row-card__title">{{ a.title }}</span>
                   <span class="row-card__meta">
-                    <app-cat-badge [category]="a.category" />
                     <span>{{ a.date | frDate: 'long' }}</span>
                   </span>
                 </span>
                 <span class="row-card__side">
-                  <span class="badge" [class]="'badge--' + group.tone">{{ a.daysLeft | relDays }}</span>
                   @if (!a.read) {
                     <span class="alert__dot" aria-label="Non lue"></span>
                   }
@@ -116,10 +115,9 @@ const LEVELS: { level: AlertLevel; label: string; tone: string }[] = [
         font-weight: 700;
       }
       .alert__dot {
-        display: block;
+        flex: 0 0 auto;
         width: 8px;
         height: 8px;
-        margin: 6px auto 0;
         border-radius: 50%;
         background: var(--primary);
       }
@@ -155,6 +153,12 @@ export class AlertsComponent {
   private readonly ui = inject(UiService);
 
   readonly onlyUnread = signal(false);
+
+  /** Ouverture pilotée par le bouton « Filtres » de l'écran qui nous héberge. */
+  readonly filtersOpen = input(false);
+
+  /** Vrai quand la liste affichée est restreinte. */
+  readonly hasActiveFilters = computed(() => this.onlyUnread());
 
   readonly alerts = this.service.alerts;
   readonly unreadCount = this.service.unreadCount;

@@ -56,10 +56,11 @@ export const appConfig: ApplicationConfig = {
         onViewTransitionCreated: ({ transition }) => {
           const nav = inject(NavDirectionService);
 
-          // Saut vers une section de l'écran déjà affiché : il n'y a pas de
-          // changement de page à animer. La transition latérale masquerait le
-          // défilement, qui est justement ce qu'il faut donner à voir.
-          if (nav.isInPageJump()) {
+          // Rien à animer quand l'écran ne change pas : un saut vers une de
+          // ses sections — la transition masquerait le défilement, qui est
+          // justement ce qu'il faut donner à voir — ou un simple changement de
+          // paramètres, c'est-à-dire un onglet ou un filtre.
+          if (nav.isInPageJump() || nav.isQueryOnlyChange()) {
             transition.skipTransition();
             nav.consume();
             return;

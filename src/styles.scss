@@ -21,13 +21,13 @@
   --border: #e4ddd0;
   --border-strong: #cbc0ac;
 
-  --text: #0a1c31;
+  --text: #123c6d;
   --text-soft: #354a63;
   /* Assombri depuis #64748b : sur --surface-3, le plus foncé des fonds
      clairs, l'ancienne valeur tombait à 3,59:1. Désormais 5,05:1. */
   --text-muted: #525d6c;
 
-  --primary: #0a1c31;
+  --primary: #123c6d;
   --primary-hover: #16324f;
   --primary-soft: #e6ecf3;
   --primary-contrast: #f0e0c4;
@@ -41,12 +41,12 @@
   --primary-surface: #e8dcc4;
   --primary-surface-hover: #ded0b5;
   --primary-surface-border: #9c8250;
-  --on-primary-surface: #0a1c31;
+  --on-primary-surface: #123c6d;
 
   /* Accent sable — pour les surfaces mises en avant */
   --accent: #a9832f;
   --accent-soft: #f7edd8;
-  --accent-contrast: #0a1c31;
+  --accent-contrast: #123c6d;
 
   --success: #146c4c;
   --success-soft: #ddf0e6;
@@ -61,7 +61,7 @@
      aplats sont sombres : le blanc convient. */
   --danger-contrast: #ffffff;
 
-  --focus: #0a1c31;
+  --focus: #123c6d;
   --overlay: rgba(10, 28, 49, 0.5);
 
   --shadow-sm: 0 1px 2px rgba(10, 28, 49, 0.07);
@@ -480,11 +480,14 @@ input[type='checkbox'] {
 .badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: 4px;
+  /* Un tag qualifie, il n'annonce pas : il doit se lire après le titre, pas
+     avant lui. D'où une taille et une graisse nettement en retrait du corps
+     de texte — la teinte, elle, garde son rôle de signal. */
+  padding: 2px 8px;
   border-radius: $radius-pill;
-  font-size: 0.78rem;
-  font-weight: 650;
+  font-size: 0.72rem;
+  font-weight: 600;
   line-height: 1.5;
   background: var(--surface-2);
   color: var(--text-soft);
@@ -519,6 +522,52 @@ input[type='checkbox'] {
     background: var(--primary-soft);
     color: var(--primary);
   }
+}
+
+/**
+ * Panneau de filtres déplié sous le bouton qui l'ouvre.
+ *
+ * Une feuille modale convient à un formulaire, qui demande qu'on s'y consacre.
+ * Filtrer, non : le résultat est juste derrière, et une feuille ancrée en bas
+ * d'écran éloigne les commandes du bouton qu'on vient de presser. Le panneau
+ * reste donc dans le flux, sur toute la largeur, juste sous la barre d'actions.
+ */
+.filterpanel {
+  margin-bottom: 18px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: $radius-md;
+  box-shadow: var(--shadow-sm);
+  animation: filterpanel-open 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Il descend depuis le bouton : le mouvement dit d'où il vient. */
+@keyframes filterpanel-open {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* Panneau de filtres : un intitulé de groupe, puis ses choix en pastilles. */
+.filter-group {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chip-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-wrap + .filter-group {
+  margin-top: 22px;
 }
 
 /* Pastille signalant un filtre actif, posée dans le bouton qui l'ouvre. */
@@ -739,6 +788,17 @@ table.data {
     min-width: 0;
   }
 
+  /* Les tags ouvrent la fiche, au-dessus du titre et alignés sur lui. Dispersés
+     entre la ligne de méta-données et le côté droit, ils se lisaient dans un
+     ordre différent d'une fiche à l'autre. */
+  &__tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 5px;
+  }
+
   &__title {
     font-weight: 620;
     font-size: 0.98rem;
@@ -761,6 +821,14 @@ table.data {
 
   &__side {
     flex: 0 0 auto;
+    /* Une rangée, pas un empilement : un badge et ce qui l'accompagne —
+       pastille, montant, bouton — se lisent côte à côte. Trois écrans
+       redéclaraient cette règle chacun de leur côté ; la pastille « non lue »
+       des alertes, faute de l'avoir fait, tombait sous le badge. */
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
@@ -1033,6 +1101,20 @@ mark.hit {
   :root[data-nav='back']::view-transition-new(root) {
     animation-name: page-enter-back;
   }
+
+  /* Onglet ou filtre : l'écran ne change pas, son contenu est remplacé. Un
+     fondu court, sans déplacement — et plus bref que le changement d'écran,
+     parce qu'il n'y a pas de trajet à suivre du regard. */
+  :root[data-nav='swap']::view-transition-old(root),
+  :root[data-nav='swap']::view-transition-new(root) {
+    animation-duration: 170ms;
+  }
+  :root[data-nav='swap']::view-transition-old(root) {
+    animation-name: swap-leave;
+  }
+  :root[data-nav='swap']::view-transition-new(root) {
+    animation-name: swap-enter;
+  }
 }
 
 /* L'écran entrant parcourt une distance plus grande que le sortant : c'est lui
@@ -1050,6 +1132,17 @@ mark.hit {
     transform: translateX(-5%);
   }
 }
+@keyframes swap-leave {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes swap-enter {
+  from {
+    opacity: 0;
+  }
+}
+
 @keyframes page-enter-back {
   from {
     opacity: 0;
@@ -1061,6 +1154,132 @@ mark.hit {
     opacity: 0;
     transform: translateX(5%);
   }
+}
+
+/* ==========================================================================
+   Écrans d'authentification
+   --------------------------------------------------------------------------
+   Partagés par la connexion et le choix d'un nouveau mot de passe : deux
+   écrans qui doivent se ressembler à l'identique, l'un menant à l'autre.
+   ========================================================================== */
+.auth {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px 0 60px;
+}
+
+.auth__card {
+  width: 100%;
+  max-width: 420px;
+}
+
+.auth__brand {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 22px;
+}
+.auth__brand h1 {
+  font-size: 1.15rem;
+  margin: 0 0 4px;
+}
+.auth__brand p {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.auth__tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 20px;
+  padding: 4px;
+  border-radius: 10px;
+  background: var(--surface-2, rgba(128, 128, 128, 0.12));
+}
+.auth__tabs button {
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.auth__tabs button.is-active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.auth__error {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(220 38 38 / 10%);
+  color: var(--danger, #dc2626);
+  font-size: 0.84rem;
+}
+
+.btn--block {
+  width: 100%;
+  justify-content: center;
+}
+
+.auth__note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 18px 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Lien discret sous le formulaire — « mot de passe oublié », retour arrière. */
+.auth__link {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: center;
+  cursor: pointer;
+}
+.auth__link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* Confirmation d'envoi. Volontairement neutre : elle ne dit pas si un compte
+   existe, seulement ce qui a été fait de la demande. */
+.auth__sent {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--success-soft);
+  color: var(--success);
+  font-size: 0.84rem;
+  line-height: 1.5;
 }
 
 /* ==========================================================================

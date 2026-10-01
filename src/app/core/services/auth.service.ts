@@ -53,6 +53,29 @@ export class AuthService {
     );
   }
 
+  /**
+   * Demande d'un lien de réinitialisation.
+   *
+   * Le serveur répond la même chose que l'adresse existe ou non : l'appelant
+   * ne peut donc rien en déduire, et ne doit rien afficher d'autre que « si un
+   * compte existe, un e-mail est parti ».
+   */
+  async forgot(email: string): Promise<void> {
+    await firstValueFrom(this.http.post<{ ok: true }>(apiUrl('/auth/forgot'), { email }));
+  }
+
+  /**
+   * Nouveau mot de passe contre un jeton reçu par e-mail.
+   *
+   * Le serveur renvoie une session : le lien cliqué depuis sa boîte mail vaut
+   * preuve d'identité, redemander de se connecter n'ajouterait rien.
+   */
+  async reset(token: string, password: string): Promise<AuthResponse> {
+    return this.accept(
+      await firstValueFrom(this.http.post<AuthResponse>(apiUrl('/auth/reset'), { token, password })),
+    );
+  }
+
   logout(): void {
     this.token.set(null);
     this.storage.remove(TOKEN_KEY);

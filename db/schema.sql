@@ -85,6 +85,20 @@ CREATE TABLE app_user (
 CREATE TRIGGER app_user_touch BEFORE UPDATE ON app_user
   FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
+-- Jetons de réinitialisation de mot de passe.
+-- Seule l'empreinte du jeton est conservée : le jeton n'existe que dans
+-- l'e-mail envoyé, et une fuite de cette table ne donnerait aucun lien
+-- exploitable. Pas de colonne « utilisé » : la ligne est supprimée au moment
+-- où le jeton sert, ce qui rend la réutilisation impossible par construction.
+CREATE TABLE password_reset (
+  token_hash text PRIMARY KEY,
+  user_id    text NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX ON password_reset (user_id);
+CREATE INDEX ON password_reset (expires_at);
+
 -- ---------------------------------------------------------------------
 -- 4. Membres de la famille (FamilyMember)
 -- ---------------------------------------------------------------------

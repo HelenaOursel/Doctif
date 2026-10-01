@@ -133,6 +133,11 @@ import { CategoryColorPipe, CategoryLabelPipe, EuroPipe, FrDatePipe, HighlightPi
               </span>
             }
             <span class="row-card__body">
+              @if (hit.document.archived) {
+                <span class="row-card__tags">
+                  <span class="badge">Archivé</span>
+                </span>
+              }
               <span class="row-card__title">
                 @for (seg of hit.document.name | highlight: search.query(); track $index) {
                   @if (seg.hit) {
@@ -145,9 +150,6 @@ import { CategoryColorPipe, CategoryLabelPipe, EuroPipe, FrDatePipe, HighlightPi
               <span class="row-card__meta">
                 <span>{{ hit.document.issuer }}</span>
                 <span>· {{ hit.document.date | frDate }}</span>
-                @if (hit.document.archived) {
-                  <span class="badge">Archivé</span>
-                }
               </span>
               @if (search.query() && hit.excerpt) {
                 <span class="row-card__excerpt">

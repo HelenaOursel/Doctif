@@ -31,12 +31,7 @@ import { CategoryLabelPipe } from './pipes';
   template: `
     <header class="ph">
       @if (backTo()) {
-        <a
-          class="ph__back"
-          [routerLink]="backTo()"
-          (click)="navDirection.markBack()"
-          aria-label="Revenir à l'écran précédent"
-        >
+        <a class="ph__back" [routerLink]="backTo()" (click)="onBack($event)" aria-label="Revenir à l'écran précédent">
           <app-icon name="back" />
         </a>
       }
@@ -108,6 +103,26 @@ import { CategoryLabelPipe } from './pipes';
 export class PageHeaderComponent {
   /** La flèche de retour remonte la hiérarchie : la transition doit s'inverser. */
   protected readonly navDirection = inject(NavDirectionService);
+
+  /**
+   * Revient d'où l'on vient, et non à la destination déclarée.
+   *
+   * `backTo` reste la cible du lien — il donne un `href` réel, ouvrable dans
+   * un onglet, et sert de repli quand l'écran a été ouvert directement. Mais
+   * dès qu'un écran attend en arrière, c'est lui qu'il faut retrouver : un
+   * contrat atteint depuis « Économies » ne doit pas reconduire à la liste des
+   * contrats.
+   */
+  protected onBack(event: MouseEvent): void {
+    this.navDirection.markBack();
+
+    // Clic modifié : l'utilisateur vise un nouvel onglet, pas un retour.
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    if (!this.navDirection.canGoBack()) return;
+
+    event.preventDefault();
+    history.back();
+  }
 
   readonly title = input.required<string>();
   readonly subtitle = input<string>('');

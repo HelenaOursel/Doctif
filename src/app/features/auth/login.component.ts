@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
@@ -7,7 +7,7 @@ import { SyncService } from '../../core/services/sync.service';
 import { Store } from '../../core/store';
 import { IconComponent } from '../../shared/icon.component';
 
-type Mode = 'connexion' | 'inscription';
+type Mode = 'connexion' | 'inscription' | 'oubli';
 
 @Component({
   selector: 'app-login',
@@ -19,7 +19,7 @@ type Mode = 'connexion' | 'inscription';
         <div class="auth__brand">
           <app-icon name="brand" />
           <div>
-            <h1>Assistant d'administration</h1>
+            <h1>Paprasse</h1>
             <p class="muted">Vos documents et contrats, sauvegardés sur votre serveur.</p>
           </div>
         </div>
@@ -28,8 +28,8 @@ type Mode = 'connexion' | 'inscription';
           <button
             type="button"
             role="tab"
-            [attr.aria-selected]="mode() === 'connexion'"
-            [class.is-active]="mode() === 'connexion'"
+            [attr.aria-selected]="mode() !== 'inscription'"
+            [class.is-active]="mode() !== 'inscription'"
             (click)="setMode('connexion')"
           >
             Connexion
@@ -72,21 +72,31 @@ type Mode = 'connexion' | 'inscription';
             />
           </div>
 
-          <div class="field">
-            <label for="a-pwd">Mot de passe</label>
-            <input
-              id="a-pwd"
-              class="input"
-              type="password"
-              required
-              [(ngModel)]="password"
-              name="password"
-              [attr.autocomplete]="mode() === 'inscription' ? 'new-password' : 'current-password'"
-            />
-            @if (mode() === 'inscription') {
-              <p class="hint">8 caractères minimum.</p>
-            }
-          </div>
+          @if (mode() !== 'oubli') {
+            <div class="field">
+              <label for="a-pwd">Mot de passe</label>
+              <input
+                id="a-pwd"
+                class="input"
+                type="password"
+                required
+                [(ngModel)]="password"
+                name="password"
+                [attr.autocomplete]="mode() === 'inscription' ? 'new-password' : 'current-password'"
+              />
+              @if (mode() === 'inscription') {
+                <p class="hint">8 caractères minimum.</p>
+              }
+            </div>
+          }
+
+          @if (sent()) {
+            <p class="auth__sent" role="status">
+              <app-icon name="success" />
+              Si un compte existe pour cette adresse, un lien de réinitialisation vient d'y être envoyé. Il est
+              valable une heure.
+            </p>
+          }
 
           @if (error()) {
             <p class="auth__error" role="alert"><app-icon name="warning" /> {{ error() }}</p>
@@ -94,12 +104,20 @@ type Mode = 'connexion' | 'inscription';
 
           <button type="submit" class="btn btn--primary btn--block" [disabled]="busy()">
             @if (busy()) {
-              <app-icon name="refresh" /> Connexion en cours…
+              <app-icon name="refresh" /> {{ mode() === 'oubli' ? 'Envoi en cours…' : 'Connexion en cours…' }}
             } @else {
-              <app-icon name="lock" /> {{ mode() === 'connexion' ? 'Se connecter' : 'Créer mon compte' }}
+              <app-icon [name]="mode() === 'oubli' ? 'mail' : 'lock'" /> {{ submitLabel() }}
             }
           </button>
         </form>
+
+        @if (mode() === 'connexion') {
+          <button type="button" class="auth__link" (click)="setMode('oubli')">Mot de passe oublié ?</button>
+        } @else if (mode() === 'oubli') {
+          <button type="button" class="auth__link" (click)="setMode('connexion')">
+            Revenir à la connexion
+          </button>
+        }
 
         @if (mode() === 'inscription') {
           <p class="auth__note">
@@ -110,95 +128,6 @@ type Mode = 'connexion' | 'inscription';
       </div>
     </div>
   `,
-  styles: [
-    `
-      .auth {
-        display: flex;
-        justify-content: center;
-        align-items: flex-start;
-        padding: 24px 0 60px;
-      }
-
-      .auth__card {
-        width: 100%;
-        max-width: 420px;
-      }
-
-      .auth__brand {
-        display: flex;
-        gap: 14px;
-        align-items: flex-start;
-        margin-bottom: 22px;
-      }
-      .auth__brand h1 {
-        font-size: 1.15rem;
-        margin: 0 0 4px;
-      }
-      .auth__brand p {
-        margin: 0;
-        font-size: 0.84rem;
-      }
-
-      .auth__tabs {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 6px;
-        margin-bottom: 20px;
-        padding: 4px;
-        border-radius: 10px;
-        background: var(--surface-2, rgba(128, 128, 128, 0.12));
-      }
-      .auth__tabs button {
-        padding: 9px 10px;
-        border: 0;
-        border-radius: 7px;
-        background: transparent;
-        color: var(--text-muted);
-        font: inherit;
-        font-size: 0.88rem;
-        cursor: pointer;
-      }
-      .auth__tabs button.is-active {
-        background: var(--surface);
-        color: var(--text);
-        font-weight: 600;
-        box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
-      }
-
-      .hint {
-        margin: 6px 0 0;
-        font-size: 0.76rem;
-        color: var(--text-muted);
-      }
-
-      .auth__error {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        margin: 0 0 14px;
-        padding: 10px 12px;
-        border-radius: 8px;
-        background: rgb(220 38 38 / 10%);
-        color: var(--danger, #dc2626);
-        font-size: 0.84rem;
-      }
-
-      .btn--block {
-        width: 100%;
-        justify-content: center;
-      }
-
-      .auth__note {
-        display: flex;
-        gap: 8px;
-        align-items: flex-start;
-        margin: 18px 0 0;
-        font-size: 0.78rem;
-        color: var(--text-muted);
-        line-height: 1.5;
-      }
-    `,
-  ],
 })
 export class LoginComponent {
   private readonly auth = inject(AuthService);
@@ -210,6 +139,19 @@ export class LoginComponent {
   protected readonly mode = signal<Mode>('connexion');
   protected readonly busy = signal(false);
   protected readonly error = signal('');
+  /** Confirmation d'envoi, affichée jusqu'au prochain changement de mode. */
+  protected readonly sent = signal(false);
+
+  protected readonly submitLabel = computed(() => {
+    switch (this.mode()) {
+      case 'inscription':
+        return 'Créer mon compte';
+      case 'oubli':
+        return 'Recevoir un lien';
+      default:
+        return 'Se connecter';
+    }
+  });
 
   protected email = '';
   protected password = '';
@@ -219,10 +161,41 @@ export class LoginComponent {
   protected setMode(mode: Mode): void {
     this.mode.set(mode);
     this.error.set('');
+    this.sent.set(false);
+  }
+
+  /**
+   * Demande d'un lien de réinitialisation.
+   *
+   * La confirmation est volontairement vague : le serveur ne dit pas si
+   * l'adresse existe, et l'écran ne doit pas prétendre en savoir plus.
+   */
+  private async requestReset(): Promise<void> {
+    if (!this.email.trim()) {
+      this.error.set('Renseignez votre adresse e-mail.');
+      return;
+    }
+
+    this.busy.set(true);
+    this.error.set('');
+
+    try {
+      await this.auth.forgot(this.email.trim());
+      this.sent.set(true);
+    } catch (error) {
+      this.error.set(messageFor(error));
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   protected async submit(): Promise<void> {
     if (this.busy()) return;
+    if (this.mode() === 'oubli') {
+      await this.requestReset();
+      return;
+    }
+
     if (!this.email.trim() || !this.password) {
       this.error.set('Renseignez votre adresse e-mail et votre mot de passe.');
       return;
@@ -264,6 +237,8 @@ export class LoginComponent {
     }
   }
 }
+
+/* --- Mot de passe oublié ----------------------------------------------- */
 
 function messageFor(error: unknown): string {
   if (!(error instanceof HttpErrorResponse)) return 'Une erreur inattendue est survenue.';

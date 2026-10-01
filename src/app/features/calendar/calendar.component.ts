@@ -1,5 +1,5 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -48,23 +48,11 @@ const normalizeView = (raw: string | null): CalendarView =>
     RelativeDaysPipe,
   ],
   template: `
-    <app-page-header [title]="'calendar.title' | t">
-      @if (deadlineView()) {
-        <button type="button" class="btn btn--sm btn--ghost" (click)="filtersOpen.set(true)">
-          <app-icon name="filter" /> Filtres
-          @if (hasActiveFilters()) {
-            <span class="dot-marker" aria-hidden="true"></span>
-          }
-        </button>
-        <button type="button" class="btn btn--sm btn--primary" (click)="openCreate()">
-          <app-icon name="add" /> Ajouter
-        </button>
-      }
-    </app-page-header>
+    <app-page-header [title]="'calendar.title' | t" />
 
     <!-- Vues d'une même donnée temporelle : les échéances à venir (en liste
          ou en mois), les rappels qui en découlent, et l'historique écrit. -->
-    <div class="segmented" role="tablist" style="margin-top: 16px">
+    <div class="segmented" role="tablist">
       @for (tab of tabs; track tab.value) {
         <button
           type="button"
@@ -82,6 +70,78 @@ const normalizeView = (raw: string | null): CalendarView =>
         </button>
       }
     </div>
+
+    <!-- Les actions portent sur ce que les onglets viennent de choisir : leur
+         place est sous eux. Le bouton « Filtres » ne change pas d'un onglet à
+         l'autre — seul le panneau qu'il ouvre change, et il est fourni par la
+         vue affichée. -->
+    <div class="actionbar">
+      @if (deadlineView()) {
+        <button type="button" class="btn btn--sm btn--primary" (click)="openCreate()">
+          <app-icon name="add" /> Ajouter
+        </button>
+      }
+      @if (view() === 'alertes' && unreadCount() > 0) {
+        <button type="button" class="btn btn--sm btn--ghost" (click)="markAllRead()">
+          <app-icon name="check" /> {{ 'action.markAllRead' | t }}
+        </button>
+      }
+      <button
+        type="button"
+        class="btn btn--sm btn--ghost actionbar__filter"
+        [attr.aria-expanded]="filtersOpen()"
+        (click)="filtersOpen.set(!filtersOpen())"
+      >
+        <app-icon name="filter" /> Filtres
+        @if (hasActiveFilters()) {
+          <span class="dot-marker" aria-hidden="true"></span>
+        }
+      </button>
+    </div>
+
+    <!-- Filtres des échéances, dépliés sur place. Les onglets Alertes et
+         Historique fournissent les leurs, au même endroit. -->
+    @if (deadlineView() && filtersOpen()) {
+      <div class="filterpanel">
+        <p class="filter-group">Filtrer par statut</p>
+        <div class="chip-wrap">
+          @for (f of statusFilters; track f.value) {
+            <button
+              type="button"
+              class="chip"
+              [class.chip--active]="statusFilter() === f.value"
+              [attr.aria-pressed]="statusFilter() === f.value"
+              (click)="statusFilter.set(f.value)"
+            >
+              {{ f.label }}
+              <span class="chip__count">{{ countForStatus(f.value) }}</span>
+            </button>
+          }
+        </div>
+
+        <p class="filter-group">Filtrer par catégorie</p>
+        <div class="chip-wrap">
+          <button
+            type="button"
+            class="chip"
+            [class.chip--active]="!categoryFilter()"
+            (click)="categoryFilter.set(null)"
+          >
+            {{ 'common.all' | t }}
+          </button>
+          @for (c of categories; track c) {
+            <button
+              type="button"
+              class="chip"
+              [class.chip--active]="categoryFilter() === c"
+              (click)="categoryFilter.set(categoryFilter() === c ? null : c)"
+            >
+              {{ c | catLabel }}
+            </button>
+          }
+        </div>
+      </div>
+    }
 
     @if (deadlineView()) {
       <!-- Suggestions issues des contrats -->
@@ -101,129 +161,135 @@ const normalizeView = (raw: string | null): CalendarView =>
           </div>
         </div>
       }
-
     }
 
-    @if (view() === 'alertes') {
-      <app-alerts />
-    } @else if (view() === 'historique') {
-      <app-timeline />
-    } @else if (view() === 'mois') {
-      <!-- Vue mensuelle -->
-      <div class="cal card">
-        <div class="cal__head">
-          <button type="button" class="btn btn--quiet btn--icon" (click)="shiftMonth(-1)" aria-label="Mois précédent">
-            <app-icon cls="fa-solid fa-chevron-left" />
-          </button>
-          <strong>{{ month().label }}</strong>
-          <button type="button" class="btn btn--quiet btn--icon" (click)="shiftMonth(1)" aria-label="Mois suivant">
-            <app-icon name="chevronRight" />
-          </button>
-        </div>
-
-        <div class="cal__grid cal__grid--weekdays" aria-hidden="true">
-          @for (d of weekdays; track $index) {
-            <span>{{ d }}</span>
-          }
-        </div>
-
-        <div class="cal__grid">
-          @for (cell of month().cells; track cell.date) {
-            <button
-              type="button"
-              class="cal__cell"
-              [class.cal__cell--out]="!cell.inMonth"
-              [class.cal__cell--today]="cell.isToday"
-              [class.cal__cell--selected]="selectedDate() === cell.date"
-              (click)="selectedDate.set(cell.date)"
-              [attr.aria-label]="cell.date + (cell.deadlines.length ? ', ' + cell.deadlines.length + ' échéance(s)' : '')"
-            >
-              <span class="cal__num">{{ cell.dayOfMonth }}</span>
-              @if (cell.deadlines.length) {
-                <span class="cal__dots">
-                  @for (d of cell.deadlines.slice(0, 3); track d.id) {
-                    <span class="cal__dot" [style.background]="colorFor(d)"></span>
-                  }
-                </span>
-              }
-            </button>
-          }
-        </div>
-      </div>
-
-      @if (selectedDayDeadlines().length) {
-        <div class="section-head"><h2>{{ selectedDate() | frDate: 'long' }}</h2></div>
-        <div class="list">
-          @for (d of selectedDayDeadlines(); track d.id) {
-            <div class="row-card">
-              <span class="row-card__icon"><app-icon [cls]="d.kind | deadlineIconClass" /></span>
-              <span class="row-card__body">
-                <span class="row-card__title">{{ d.title }}</span>
-                <span class="row-card__meta">{{ kindLabel(d.kind) }}</span>
-              </span>
-              <button type="button" class="btn btn--sm btn--quiet" (click)="toggleDone(d.id)">
-                <app-icon [name]="d.done ? 'checkCircle' : 'emptyCircle'" />
+    <!-- Le panneau est reconstruit à chaque changement d'onglet : la clé de
+         la boucle est la vue elle-même. Sans cette reconstruction, aucun
+         élément ne naîtrait et il n'y aurait rien à animer. -->
+    @for (panel of [view()]; track panel) {
+      <div class="tabpanel">
+        @if (panel === 'alertes') {
+          <app-alerts [filtersOpen]="filtersOpen()" />
+        } @else if (panel === 'historique') {
+          <app-timeline [filtersOpen]="filtersOpen()" />
+        } @else if (panel === 'mois') {
+          <!-- Vue mensuelle -->
+          <div class="cal card">
+            <div class="cal__head">
+              <button type="button" class="btn btn--quiet btn--icon" (click)="shiftMonth(-1)" aria-label="Mois précédent">
+                <app-icon cls="fa-solid fa-chevron-left" />
+              </button>
+              <strong>{{ month().label }}</strong>
+              <button type="button" class="btn btn--quiet btn--icon" (click)="shiftMonth(1)" aria-label="Mois suivant">
+                <app-icon name="chevronRight" />
               </button>
             </div>
-          }
-        </div>
-      } @else if (selectedDate()) {
-        <p class="muted" style="margin-top: 12px">Aucune échéance le {{ selectedDate() | frDate: 'long' }}.</p>
-      }
-    } @else {
-      <!-- Vue liste groupée -->
-      @if (showPending()) {
-        @if (overdue().length) {
-          <div class="section-head"><h2 class="text-danger">En retard</h2></div>
-          <div class="list">
-            @for (d of overdue(); track d.id) {
-              <ng-container *ngTemplateOutlet="row; context: { $implicit: d }" />
-            }
-          </div>
-        }
 
-        @for (group of groups(); track group.label) {
-          @if (group.items.length) {
-            <div class="section-head">
-              <h2>{{ group.label }}</h2>
-              <span class="muted">{{ group.items.length }}</span>
-            </div>
-            <div class="list">
-              @for (d of group.items; track d.id) {
-                <ng-container *ngTemplateOutlet="row; context: { $implicit: d }" />
+            <div class="cal__grid cal__grid--weekdays" aria-hidden="true">
+              @for (d of weekdays; track $index) {
+                <span>{{ d }}</span>
               }
             </div>
-          }
-        }
 
-        @if (!overdue().length && !hasAny()) {
-          <app-empty icon="calendarEmpty" title="Aucune échéance à venir" hint="Ajoutez-en une, ou importez un document contenant une date limite." />
-        }
-      }
-
-      @if (showDone()) {
-        @if (doneList().length) {
-          @if (statusFilter() === 'toutes') {
-            <div class="section-head"><h2>Traitées</h2></div>
-          }
-          <div class="list">
-            @for (d of doneList(); track d.id) {
-              <div class="row-card row-card--done">
-                <span class="row-card__icon"><app-icon name="success" /></span>
-                <span class="row-card__body">
-                  <span class="row-card__title">{{ d.title }}</span>
-                  <span class="row-card__meta">{{ d.date | frDate }}</span>
-                </span>
-                <button type="button" class="btn btn--sm btn--ghost" (click)="toggleDone(d.id)">
-                  <app-icon name="refresh" /> Rouvrir
+            <div class="cal__grid">
+              @for (cell of month().cells; track cell.date) {
+                <button
+                  type="button"
+                  class="cal__cell"
+                  [class.cal__cell--out]="!cell.inMonth"
+                  [class.cal__cell--today]="cell.isToday"
+                  [class.cal__cell--selected]="selectedDate() === cell.date"
+                  (click)="selectedDate.set(cell.date)"
+                  [attr.aria-label]="cell.date + (cell.deadlines.length ? ', ' + cell.deadlines.length + ' échéance(s)' : '')"
+                >
+                  <span class="cal__num">{{ cell.dayOfMonth }}</span>
+                  @if (cell.deadlines.length) {
+                    <span class="cal__dots">
+                      @for (d of cell.deadlines.slice(0, 3); track d.id) {
+                        <span class="cal__dot" [style.background]="colorFor(d)"></span>
+                      }
+                    </span>
+                  }
                 </button>
+              }
+            </div>
+          </div>
+
+          @if (selectedDayDeadlines().length) {
+            <div class="section-head"><h2>{{ selectedDate() | frDate: 'long' }}</h2></div>
+            <div class="list">
+              @for (d of selectedDayDeadlines(); track d.id) {
+                <div class="row-card">
+                  <span class="row-card__icon"><app-icon [cls]="d.kind | deadlineIconClass" /></span>
+                  <span class="row-card__body">
+                    <span class="row-card__title">{{ d.title }}</span>
+                    <span class="row-card__meta">{{ kindLabel(d.kind) }}</span>
+                  </span>
+                  <button type="button" class="btn btn--sm btn--quiet" (click)="toggleDone(d.id)">
+                    <app-icon [name]="d.done ? 'checkCircle' : 'emptyCircle'" />
+                  </button>
+                </div>
+              }
+            </div>
+          } @else if (selectedDate()) {
+            <p class="muted" style="margin-top: 12px">Aucune échéance le {{ selectedDate() | frDate: 'long' }}.</p>
+          }
+        } @else {
+          <!-- Vue liste groupée -->
+          @if (showPending()) {
+            @if (overdue().length) {
+              <div class="section-head"><h2 class="text-danger">En retard</h2></div>
+              <div class="list">
+                @for (d of overdue(); track d.id) {
+                  <ng-container *ngTemplateOutlet="row; context: { $implicit: d }" />
+                }
               </div>
             }
-          </div>
-        } @else if (statusFilter() === 'traitees') {
-          <app-empty icon="calendarEmpty" title="Aucune échéance traitée" hint="Les échéances que vous cochez viendront ici." />
+
+            @for (group of groups(); track group.label) {
+              @if (group.items.length) {
+                <div class="section-head">
+                  <h2>{{ group.label }}</h2>
+                  <span class="muted">{{ group.items.length }}</span>
+                </div>
+                <div class="list">
+                  @for (d of group.items; track d.id) {
+                    <ng-container *ngTemplateOutlet="row; context: { $implicit: d }" />
+                  }
+                </div>
+              }
+            }
+
+            @if (!overdue().length && !hasAny()) {
+              <app-empty icon="calendarEmpty" title="Aucune échéance à venir" hint="Ajoutez-en une, ou importez un document contenant une date limite." />
+            }
+          }
+
+          @if (showDone()) {
+            @if (doneList().length) {
+              @if (statusFilter() === 'toutes') {
+                <div class="section-head"><h2>Traitées</h2></div>
+              }
+              <div class="list">
+                @for (d of doneList(); track d.id) {
+                  <div class="row-card row-card--done">
+                    <span class="row-card__icon"><app-icon name="success" /></span>
+                    <span class="row-card__body">
+                      <span class="row-card__title">{{ d.title }}</span>
+                      <span class="row-card__meta">{{ d.date | frDate }}</span>
+                    </span>
+                    <button type="button" class="btn btn--sm btn--ghost" (click)="toggleDone(d.id)">
+                      <app-icon name="refresh" /> Rouvrir
+                    </button>
+                  </div>
+                }
+              </div>
+            } @else if (statusFilter() === 'traitees') {
+              <app-empty icon="calendarEmpty" title="Aucune échéance traitée" hint="Les échéances que vous cochez viendront ici." />
+            }
+          }
         }
-      }
+      </div>
     }
 
     <!-- Gabarit de ligne réutilisé par les groupes -->
@@ -233,19 +299,21 @@ const normalizeView = (raw: string | null): CalendarView =>
           <app-icon [cls]="d.kind | deadlineIconClass" />
         </span>
         <span class="row-card__body">
+          <span class="row-card__tags">
+            <span
+              class="badge"
+              [class.badge--danger]="days(d.date) <= 7"
+              [class.badge--warning]="days(d.date) > 7 && days(d.date) <= 30"
+            >
+              {{ days(d.date) | relDays }}
+            </span>
+          </span>
           <span class="row-card__title">{{ d.title }}</span>
           <span class="row-card__meta">
             <span>{{ d.date | frDate }}</span>
           </span>
         </span>
         <span class="row-card__side">
-          <span
-            class="badge"
-            [class.badge--danger]="days(d.date) <= 7"
-            [class.badge--warning]="days(d.date) > 7 && days(d.date) <= 30"
-          >
-            {{ days(d.date) | relDays }}
-          </span>
           <button type="button" class="btn btn--sm btn--quiet" (click)="toggleDone(d.id)" aria-label="Marquer comme fait">
             <app-icon name="emptyCircle" />
           </button>
@@ -270,47 +338,6 @@ const normalizeView = (raw: string | null): CalendarView =>
               <app-icon name="add" />
             </button>
           </div>
-        }
-      </div>
-    </app-sheet>
-
-    <!-- Filtres : statut et catégorie au même endroit, sous la même forme. -->
-    <app-sheet [open]="filtersOpen()" title="Filtres" (close)="filtersOpen.set(false)">
-      <p class="filter-group">Filtrer par statut</p>
-      <div class="chip-wrap">
-        @for (f of statusFilters; track f.value) {
-          <button
-            type="button"
-            class="chip"
-            [class.chip--active]="statusFilter() === f.value"
-            [attr.aria-pressed]="statusFilter() === f.value"
-            (click)="statusFilter.set(f.value)"
-          >
-            {{ f.label }}
-            <span class="chip__count">{{ countForStatus(f.value) }}</span>
-          </button>
-        }
-      </div>
-
-      <p class="filter-group">Filtrer par catégorie</p>
-      <div class="chip-wrap">
-        <button
-          type="button"
-          class="chip"
-          [class.chip--active]="!categoryFilter()"
-          (click)="categoryFilter.set(null)"
-        >
-          {{ 'common.all' | t }}
-        </button>
-        @for (c of categories; track c) {
-          <button
-            type="button"
-            class="chip"
-            [class.chip--active]="categoryFilter() === c"
-            (click)="categoryFilter.set(categoryFilter() === c ? null : c)"
-          >
-            {{ c | catLabel }}
-          </button>
         }
       </div>
     </app-sheet>
@@ -373,6 +400,10 @@ const normalizeView = (raw: string | null): CalendarView =>
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 4px;
+        /* L'espace sous la barre appartient à la barre, pas à ce qui suit :
+         chaque vue posait sinon sa propre marge, ou aucune — la vue mois
+         collait aux onglets. */
+        margin: 16px 0 18px;
         padding: 4px;
         border-radius: 999px;
         background: var(--surface-2);
@@ -443,23 +474,34 @@ const normalizeView = (raw: string | null): CalendarView =>
         color: var(--on-primary-surface);
       }
 
-      /* Intitulé de groupe dans le panneau de filtres. */
-      .filter-group {
-        margin: 0 0 10px;
-        font-size: 0.82rem;
-        font-weight: 600;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-      }
-      .chip-wrap + .filter-group {
-        margin-top: 22px;
-      }
-
-      .chip-wrap {
+      /* Ce qui agit sur la liste à gauche, ce qui la restreint à droite. */
+      .actionbar {
         display: flex;
         flex-wrap: wrap;
+        align-items: center;
         gap: 8px;
+        margin-bottom: 18px;
+      }
+
+      /* Poussé à droite plutôt que la barre justifiée aux extrémités : selon
+         l'onglet, le bouton peut se retrouver seul sur la ligne, et il doit
+         rester à droite malgré tout. */
+      .actionbar__filter {
+        margin-left: auto;
+      }
+
+      /* Le contenu se pose, il ne glisse pas : assez bref pour ne pas retarder
+         la lecture, assez net pour dire que la vue a changé. Le mouvement
+         disparaît de lui-même si le système demande moins d'animation — voir
+         la règle globale \`prefers-reduced-motion\`. */
+      .tabpanel {
+        animation: tab-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+      }
+      @keyframes tab-in {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
       }
 
       .cal__head {
@@ -541,11 +583,6 @@ const normalizeView = (raw: string | null): CalendarView =>
       .row-card--done .row-card__title {
         text-decoration: line-through;
       }
-      .row-card__side {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
       .text-danger {
         color: var(--danger);
       }
@@ -584,10 +621,30 @@ export class CalendarComponent {
   readonly categoryFilter = signal<Category | null>(null);
   readonly filtersOpen = signal(false);
 
+  /**
+   * Les onglets Alertes et Historique gèrent leurs propres filtres : le bouton
+   * commun les interroge plutôt que de dupliquer leur état ici, qui se calcule
+   * à partir de données qu'eux seuls possèdent.
+   */
+  private readonly alertsPanel = viewChild(AlertsComponent);
+  private readonly timelinePanel = viewChild(TimelineComponent);
+
   /** Pastille sur le bouton : quelque chose masque une partie de la liste. */
-  readonly hasActiveFilters = computed(
-    () => this.categoryFilter() !== null || this.statusFilter() !== 'a-traiter',
-  );
+  readonly hasActiveFilters = computed(() => {
+    switch (this.view()) {
+      case 'alertes':
+        return this.alertsPanel()?.hasActiveFilters() ?? false;
+      case 'historique':
+        return this.timelinePanel()?.hasActiveFilters() ?? false;
+      default:
+        return this.categoryFilter() !== null || this.statusFilter() !== 'a-traiter';
+    }
+  });
+
+  /** Relayé à l'onglet des alertes, qui sait aussi en rendre compte. */
+  markAllRead(): void {
+    this.alertsPanel()?.markAllRead();
+  }
 
   /** Filtre par état de traitement. Par défaut, ce qui reste à faire. */
   readonly statusFilters = [
@@ -610,6 +667,7 @@ export class CalendarComponent {
 
   setView(view: CalendarView): void {
     this.view.set(view);
+    this.filtersOpen.set(false);
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { vue: view === 'liste' ? null : view },

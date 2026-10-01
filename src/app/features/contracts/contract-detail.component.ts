@@ -17,6 +17,7 @@ import {
 import { CategoryIconClassPipe, DocTypeIconClassPipe, IconComponent } from '../../shared/icon.component';
 import { EuroPipe, FrDatePipe, PercentPipe, RelativeDaysPipe } from '../../shared/pipes';
 import { FEATURES } from '../../core/features';
+import { BillFormComponent } from '../anomalies/bill-form.component';
 import { ContractFormComponent } from './contract-form.component';
 
 @Component({
@@ -27,6 +28,7 @@ import { ContractFormComponent } from './contract-form.component';
     PageHeaderComponent,
     RiskGaugeComponent,
     CategoryBadgeComponent,
+    BillFormComponent,
     EmptyStateComponent,
     SheetComponent,
     IconComponent,
@@ -42,10 +44,20 @@ import { ContractFormComponent } from './contract-form.component';
     @if (contract(); as c) {
       <app-page-header [title]="c.label" [subtitle]="c.provider" backTo="/contrats">
         <app-cat-badge [category]="c.category" />
+        <button type="button" class="btn btn--sm btn--ghost" (click)="billFormOpen.set(true)">
+          <app-icon name="money" /> Saisir une facture
+        </button>
         <button type="button" class="btn btn--sm btn--ghost" (click)="editOpen.set(true)">
           <app-icon name="edit" /> Modifier
         </button>
       </app-page-header>
+
+      <app-bill-form
+        [open]="billFormOpen()"
+        [contract]="c"
+        (close)="billFormOpen.set(false)"
+        (created)="billFormOpen.set(false)"
+      />
 
       <app-contract-form
         [open]="editOpen()"
@@ -449,6 +461,7 @@ export class ContractDetailComponent {
 
   /** Feuille de modification du contrat. */
   readonly editOpen = signal(false);
+  readonly billFormOpen = signal(false);
   protected readonly letters = inject(LetterService);
   private readonly ui = inject(UiService);
 

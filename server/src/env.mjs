@@ -38,6 +38,27 @@ export const env = {
   port: Number(process.env.PORT ?? 3000),
   jwtSecret: jwtSecret(),
   tokenTtl: process.env.JWT_TTL ?? '30d',
+
+  /**
+   * Adresse publique de l'application, celle que l'utilisateur ouvre dans son
+   * navigateur. Elle sert à composer le lien de réinitialisation : le serveur
+   * d'API et l'application ne sont pas au même endroit, et « localhost:3000 »
+   * n'afficherait rien.
+   */
+  appBaseUrl: (process.env.APP_BASE_URL ?? 'http://localhost:4200').replace(/\/$/, ''),
+
+  /** Durée de validité d'un lien de réinitialisation, en minutes. */
+  resetTtlMinutes: Number(process.env.RESET_TTL_MINUTES ?? 60),
+
+  mail: {
+    apiKey: process.env.RESEND_API_KEY ?? '',
+    /**
+     * Expéditeur. Resend n'accepte un domaine qu'une fois vérifié ; en
+     * attendant, « onboarding@resend.dev » fonctionne mais n'écrit qu'à
+     * l'adresse du titulaire du compte Resend.
+     */
+    from: process.env.MAIL_FROM ?? 'Assistant administratif <onboarding@resend.dev>',
+  },
   corsOrigins: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : DEFAULT_ORIGINS,
   pg: {
     host: process.env.PGHOST ?? 'localhost',

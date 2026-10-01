@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { TimelineEvent, TimelineKind } from '../../core/models';
@@ -34,6 +34,30 @@ const KIND_META: Record<TimelineKind, { icon: 'contracts' | 'blocked' | 'money' 
     FrDatePipe,
   ],
   template: `
+    @if (filtersOpen()) {
+      <div class="filterpanel">
+        <p class="filter-group">Filtrer par nature d'événement</p>
+        <div class="chip-wrap">
+          <button type="button" class="chip" [class.chip--active]="!kindFilter()" (click)="kindFilter.set(null)">
+            Tout ({{ events().length }})
+          </button>
+          @for (k of kinds; track k) {
+            @if (countFor(k) > 0) {
+              <button
+                type="button"
+                class="chip"
+                [class.chip--active]="kindFilter() === k"
+                (click)="kindFilter.set(kindFilter() === k ? null : k)"
+              >
+                <app-icon [name]="meta(k).icon" /> {{ meta(k).label }}
+                <span class="chip__count">{{ countFor(k) }}</span>
+              </button>
+            }
+          }
+        </div>
+      </div>
+    }
+
     <!-- Recherche en langage naturel -->
     <div class="searchbar" style="margin-top: 16px">
       <app-icon name="search" />
@@ -70,25 +94,7 @@ const KIND_META: Record<TimelineKind, { icon: 'contracts' | 'blocked' | 'money' 
       </div>
     }
 
-    <!-- Filtres par nature d'événement -->
-    <div class="scroll-x" style="margin: 14px 0">
-      <button type="button" class="chip" [class.chip--active]="!kindFilter()" (click)="kindFilter.set(null)">
-        Tout ({{ events().length }})
-      </button>
-      @for (k of kinds; track k) {
-        @if (countFor(k) > 0) {
-          <button
-            type="button"
-            class="chip"
-            [class.chip--active]="kindFilter() === k"
-            (click)="kindFilter.set(kindFilter() === k ? null : k)"
-          >
-            <app-icon [name]="meta(k).icon" /> {{ meta(k).label }}
-            <span class="chip__count">{{ countFor(k) }}</span>
-          </button>
-        }
-      }
-    </div>
+
 
     <!-- Chronologie -->
     @if (grouped().length) {
@@ -269,6 +275,12 @@ export class TimelineComponent {
   readonly events = this.service.events;
 
   readonly kindFilter = signal<TimelineKind | null>(null);
+
+  /** Ouverture pilotée par le bouton « Filtres » de l'écran qui nous héberge. */
+  readonly filtersOpen = input(false);
+
+  /** Vrai quand la liste affichée est restreinte. */
+  readonly hasActiveFilters = computed(() => this.kindFilter() !== null);
   readonly searchTerm = signal('');
 
   query = '';

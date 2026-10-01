@@ -123,16 +123,16 @@ import { FEATURES } from '../../core/features';
               <app-icon [cls]="d.kind | deadlineIconClass" />
             </span>
             <span class="row-card__body">
+              @if (days(d.date) <= 30) {
+                <span class="row-card__tags">
+                  <span class="badge" [class.badge--danger]="days(d.date) <= 7" [class.badge--warning]="days(d.date) > 7">
+                    {{ days(d.date) | relDays }}
+                  </span>
+                </span>
+              }
               <span class="row-card__title">{{ d.title }}</span>
               <span class="row-card__meta">{{ d.date | frDate }}</span>
             </span>
-            @if (days(d.date) <= 30) {
-              <span class="row-card__side">
-                <span class="badge" [class.badge--danger]="days(d.date) <= 7" [class.badge--warning]="days(d.date) > 7">
-                  {{ days(d.date) | relDays }}
-                </span>
-              </span>
-            }
           </a>
         }
       </div>

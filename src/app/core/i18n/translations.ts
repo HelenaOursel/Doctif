@@ -21,7 +21,7 @@ export interface LocaleMeta {
 /** Le dictionnaire français définit l'ensemble des clés valides. */
 export const FR = {
   /* --- Chrome applicatif --- */
-  'app.name': "Assistant d'administration",
+  'app.name': "Paprasse",
   'app.skipLink': 'Aller au contenu principal',
   'app.menu.open': 'Ouvrir le menu de navigation',
   'app.menu.close': 'Fermer le menu',

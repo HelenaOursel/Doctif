@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "API de l'assistant d'administration : authentification et persistance de l'état dans PostgreSQL.",
+  "description": "API de Paprasse : authentification et persistance de l'état dans PostgreSQL.",
   "scripts": {
     "start": "node src/index.mjs",
     "dev": "node --watch src/index.mjs"

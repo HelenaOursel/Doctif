@@ -95,15 +95,19 @@ import { ContractFormComponent } from './contract-form.component';
             </span>
 
             <span class="row-card__body">
+              @if (c.status !== 'actif' || (c.renewalDate && daysLeft(c.renewalDate) <= 45)) {
+                <span class="row-card__tags">
+                  @if (c.status !== 'actif') {
+                    <span class="badge">{{ c.status === 'resilie' ? 'Résilié' : 'Expiré' }}</span>
+                  }
+                  @if (c.renewalDate && c.status === 'actif' && daysLeft(c.renewalDate) <= 45) {
+                    <span class="badge badge--warning">Échéance proche</span>
+                  }
+                </span>
+              }
               <span class="row-card__title">{{ c.label }}</span>
               <span class="row-card__meta">
                 <span>{{ c.provider }}</span>
-                @if (c.status !== 'actif') {
-                  <span class="badge">{{ c.status === 'resilie' ? 'Résilié' : 'Expiré' }}</span>
-                }
-                @if (c.renewalDate && c.status === 'actif' && daysLeft(c.renewalDate) <= 45) {
-                  <span class="badge badge--warning">Échéance proche</span>
-                }
               </span>
             </span>
 
@@ -154,19 +158,24 @@ import { ContractFormComponent } from './contract-form.component';
       }
 
       .contract__unit {
-        display: block;
         font-size: 0.72rem;
         color: var(--text-muted);
       }
 
+      /* Le score se centre dans sa pastille. Sans cela il héritait de
+         l'alignement à droite du côté de la fiche et se collait au bord, la
+         largeur minimale creusant un vide devant lui. */
       .riskpill {
-        display: inline-block;
-        margin-top: 6px;
-        min-width: 34px;
-        padding: 2px 7px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 28px;
+        padding: 3px 8px;
         border-radius: 999px;
-        font-size: 0.72rem;
+        font-size: 0.74rem;
         font-weight: 700;
+        line-height: 1.4;
+        text-align: center;
         font-variant-numeric: tabular-nums;
       }
       .riskpill--faible {

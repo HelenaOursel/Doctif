@@ -1,9 +1,10 @@
-import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
-import { pool } from './db.mjs';
+import { pool, transaction } from './db.mjs';
 import { env } from './env.mjs';
+import { resetPasswordEmail, sendMail } from './mail.mjs';
 
 const scryptAsync = promisify(scrypt);
 
@@ -80,6 +81,44 @@ export function requireAuth(req, res, next) {
   }
 }
 
+/** Règle unique, appliquée à l'inscription comme à la réinitialisation. */
+const MIN_PASSWORD_LENGTH = 8;
+
+/**
+ * Le jeton n'est jamais conservé : seule son empreinte l'est.
+ *
+ * Une fuite de la table ne donnerait donc aucun lien utilisable. SHA-256 sans
+ * sel suffit ici, contrairement à un mot de passe : le jeton fait 256 bits
+ * d'aléa, il n'existe pas de dictionnaire à lui opposer.
+ */
+const hashToken = (token) => createHash('sha256').update(token).digest('hex');
+
+/**
+ * Dernière demande par adresse, en mémoire.
+ *
+ * Empêche qu'un formulaire soumis en boucle inonde une boîte de réception —
+ * et fasse payer les envois au titulaire du compte Resend. Le stockage en
+ * mémoire disparaît au redémarrage : c'est un garde-fou de confort, pas une
+ * mesure de sécurité, celle-ci reposant sur l'expiration des jetons.
+ */
+const lastRequestByEmail = new Map();
+const REQUEST_INTERVAL_MS = 60_000;
+
+function throttled(email) {
+  const now = Date.now();
+  const previous = lastRequestByEmail.get(email);
+  if (previous && now - previous < REQUEST_INTERVAL_MS) return true;
+
+  lastRequestByEmail.set(email, now);
+  // Purge opportuniste : sans elle, la table grandirait indéfiniment.
+  if (lastRequestByEmail.size > 1000) {
+    for (const [key, at] of lastRequestByEmail) {
+      if (now - at > REQUEST_INTERVAL_MS) lastRequestByEmail.delete(key);
+    }
+  }
+  return false;
+}
+
 export const authRouter = Router();
 
 authRouter.post('/register', async (req, res) => {
@@ -89,8 +128,10 @@ authRouter.post('/register', async (req, res) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return res.status(400).json({ error: 'Adresse e-mail invalide.' });
   }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Le mot de passe doit faire au moins 8 caractères.' });
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return res
+      .status(400)
+      .json({ error: `Le mot de passe doit faire au moins ${MIN_PASSWORD_LENGTH} caractères.` });
   }
 
   const existing = await pool.query('SELECT 1 FROM app.app_user WHERE email = $1', [email]);
@@ -130,6 +171,98 @@ authRouter.post('/login', async (req, res) => {
   }
 
   return res.json({ token: signToken(row.id), profile: toProfile(row), version: row.state_version });
+});
+
+/**
+ * Demande de réinitialisation.
+ *
+ * La réponse est identique que l'adresse existe ou non, et quel que soit le
+ * sort de l'e-mail : toute différence — code, message, durée — reviendrait à
+ * publier la liste des comptes. L'incident éventuel est journalisé côté
+ * serveur, où il a sa place.
+ */
+authRouter.post('/forgot', async (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const accepted = { ok: true };
+
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.json(accepted);
+  if (throttled(email)) return res.json(accepted);
+
+  const { rows } = await pool.query('SELECT id, first_name FROM app.app_user WHERE email = $1', [email]);
+  const user = rows[0];
+  if (!user) return res.json(accepted);
+
+  // Les demandes précédentes tombent : un seul lien vaut à la fois, celui que
+  // l'utilisateur vient de réclamer.
+  await pool.query('DELETE FROM app.password_reset WHERE user_id = $1', [user.id]);
+
+  const token = randomBytes(32).toString('base64url');
+  await pool.query(
+    `INSERT INTO app.password_reset (token_hash, user_id, expires_at)
+     VALUES ($1, $2, now() + ($3 || ' minutes')::interval)`,
+    [hashToken(token), user.id, String(env.resetTtlMinutes)],
+  );
+
+  const link = `${env.appBaseUrl}/reinitialisation?token=${encodeURIComponent(token)}`;
+  const message = resetPasswordEmail({
+    link,
+    firstName: user.first_name,
+    ttlMinutes: env.resetTtlMinutes,
+  });
+  await sendMail({ to: email, ...message });
+
+  return res.json(accepted);
+});
+
+/**
+ * Nouveau mot de passe.
+ *
+ * Le jeton est consommé dans la même transaction que l'écriture : deux
+ * requêtes simultanées ne peuvent pas le réutiliser toutes les deux.
+ */
+authRouter.post('/reset', async (req, res) => {
+  const token = String(req.body?.token ?? '');
+  const password = String(req.body?.password ?? '');
+
+  if (!token) return res.status(400).json({ error: 'Lien de réinitialisation incomplet.' });
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return res
+      .status(400)
+      .json({ error: `Le mot de passe doit faire au moins ${MIN_PASSWORD_LENGTH} caractères.` });
+  }
+
+  // Le hachage est calculé avant la transaction : il coûte quelques
+  // microsecondes, mais le hachage du mot de passe, lui, prend ~100 ms et n'a
+  // rien à faire dans une transaction qui verrouille une ligne.
+  const passwordHash = await hashPassword(password);
+
+  const result = await transaction(async (client) => {
+    const { rows } = await client.query(
+      `DELETE FROM app.password_reset
+       WHERE token_hash = $1 AND expires_at > now()
+       RETURNING user_id`,
+      [hashToken(token)],
+    );
+    if (!rows.length) return null;
+
+    const { rows: users } = await client.query(
+      `UPDATE app.app_user SET password_hash = $1 WHERE id = $2 RETURNING ${PROFILE_COLUMNS}`,
+      [passwordHash, rows[0].user_id],
+    );
+    return users[0] ?? null;
+  });
+
+  if (!result) {
+    return res.status(400).json({ error: 'Ce lien est expiré ou a déjà été utilisé. Demandez-en un nouveau.' });
+  }
+
+  // Connexion immédiate : réclamer le mot de passe qu'on vient de choisir
+  // n'apporte rien, et l'utilisateur est déjà authentifié par sa boîte mail.
+  return res.json({
+    token: signToken(result.id),
+    profile: toProfile(result),
+    version: result.state_version,
+  });
 });
 
 authRouter.get('/me', requireAuth, async (req, res) => {

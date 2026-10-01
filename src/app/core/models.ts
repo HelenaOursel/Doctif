@@ -1,5 +1,5 @@
 /**
- * Modèle de données de l'assistant d'administration personnelle.
+ * Modèle de données de Paprasse.
  * Tout est sérialisable en JSON : le store persiste dans localStorage.
  */
 
